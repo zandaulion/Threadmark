@@ -20,7 +20,12 @@ const state = {
   settings: { contextAware: false, outgoingMonitoring: false, attachmentProcessing: false, dailyDigest: false, digestTime: '19:00', replyDelayHours: 8 },
   busy: false,
   stream: null,
+  streamRetryTimer: null,
 };
+
+let foregroundRefreshPromise = null;
+let foregroundRefreshStartedAt = 0;
+let wasHidden = document.hidden;
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
@@ -70,6 +75,8 @@ async function boot() {
 }
 
 function showGate(message = '') {
+  clearTimeout(state.streamRetryTimer);
+  state.streamRetryTimer = null;
   state.stream?.close();
   gate.hidden = false;
   app.hidden = true;
@@ -270,6 +277,8 @@ function renderDetection() {
 }
 
 function connectStream() {
+  clearTimeout(state.streamRetryTimer);
+  state.streamRetryTimer = null;
   state.stream?.close();
   const stream = new EventSource('/api/stream');
   state.stream = stream;
@@ -280,7 +289,13 @@ function connectStream() {
   stream.addEventListener('rules', (event) => { state.rules = JSON.parse(event.data); renderRules(); });
   stream.addEventListener('bridge', (event) => { state.bridge = JSON.parse(event.data); renderBridge(); });
   stream.addEventListener('settings', (event) => { state.settings = JSON.parse(event.data); renderSettings(); renderDetection(); });
-  stream.onerror = () => setTimeout(() => state.authenticated && connectStream(), 5000);
+  stream.onerror = () => {
+    if (state.stream !== stream || state.streamRetryTimer) return;
+    state.streamRetryTimer = setTimeout(() => {
+      state.streamRetryTimer = null;
+      if (state.authenticated && !document.hidden) connectStream();
+    }, 5000);
+  };
 }
 
 async function refreshFeedAndSummary() {
@@ -290,6 +305,36 @@ async function refreshFeedAndSummary() {
   renderSummary();
   renderFeed();
 }
+
+function refreshOnForeground({ reconnect = false } = {}) {
+  if (!state.authenticated || document.hidden) return foregroundRefreshPromise;
+  const startedAt = Date.now();
+  if (foregroundRefreshPromise || startedAt - foregroundRefreshStartedAt < 750) return foregroundRefreshPromise;
+  foregroundRefreshStartedAt = startedAt;
+  if (reconnect || !state.stream || state.stream.readyState === EventSource.CLOSED) connectStream();
+  foregroundRefreshPromise = refreshFeedAndSummary()
+    .catch(() => {})
+    .finally(() => { foregroundRefreshPromise = null; });
+  return foregroundRefreshPromise;
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    wasHidden = true;
+    return;
+  }
+  const reconnect = wasHidden;
+  wasHidden = false;
+  void refreshOnForeground({ reconnect });
+});
+
+window.addEventListener('pageshow', (event) => {
+  void refreshOnForeground({ reconnect: event.persisted });
+});
+
+window.addEventListener('focus', () => {
+  void refreshOnForeground();
+});
 
 $('#invite-form').addEventListener('submit', async (event) => {
   event.preventDefault();

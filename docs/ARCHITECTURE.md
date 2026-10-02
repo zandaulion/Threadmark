@@ -26,7 +26,7 @@ The default Podman deployment puts the app and both connectors on one network. C
 7. If nothing matches, optional Jev built-ins and applicable semantic monitors evaluate the message. The narrow invoice judgment has its own threshold and maps to a Payment item. A local Gmail meeting candidate also goes to Jev for confirmation. Context/reply settings can explicitly request additional Jev signals.
 8. A contact image that still has no match can become a local **Photo needs review** item.
 9. Only matched messages and attention items are stored. The server broadcasts changes through SSE and optionally sends Web Push.
-10. The browser renders the current filtered feed and applies actions through authenticated APIs.
+10. The browser renders the current filtered feed and applies actions through authenticated APIs. Because mobile browsers suspend live streams in the background, visibility, focus and restored-page events trigger a throttled feed/summary reconciliation and stream reconnection.
 
 Gmail follows the same flow with a privacy-preserving routing stage. Connection stores the current `historyId` and deliberately performs no historical import. Each poll calls `history.list`; if Google reports an expired checkpoint, Threadmark resets to the current profile history without backfilling. New mail is first retrieved as metadata. A complete body is fetched only after a label or sender matches the allowlist. Plain text is preferred, HTML is reduced to text, quoted replies and signatures are removed, and attachments are ignored.
 

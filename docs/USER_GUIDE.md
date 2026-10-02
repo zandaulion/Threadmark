@@ -37,6 +37,8 @@ Gmail labels appear after connection. Senders are discovered from the headers of
 
 The overview shows the number of open items, payments and meetings. Use the category tabs to show all items, payments, meetings or reminders. Use the status control for open, snoozed and completed items.
 
+When the installed PWA is opened or brought back from the background, Threadmark refreshes the counters and current feed from the server and reconnects its live update stream. A manual page reload should not be necessary.
+
 Each card includes:
 
 - the detected category and title;
