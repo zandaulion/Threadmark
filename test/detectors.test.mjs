@@ -33,6 +33,18 @@ test('does not treat generic invoicing marketing as an invoice', () => {
   assert.equal(items.some((item) => item.key === 'invoice'), false);
 });
 
+test('does not combine distant invoice and billing words across a long newsletter', () => {
+  const text = `A profile mentions a business bill and an unusual loophole.${' The story continues without asking the reader to pay.'.repeat(12)} She only needed an internet connection to work abroad.`;
+  assert.deepEqual(detectAttention({ text }), []);
+});
+
+test('keeps nearby invoice evidence local', () => {
+  const withAmount = detectAttention({ text: 'Invoice 1842 is ready. Total: 245 RON.' });
+  const withIban = detectAttention({ text: 'Factura poate fi achitată în RO00TEST0000000000000000.' });
+  assert.equal(withAmount[0]?.key, 'invoice');
+  assert.equal(withIban[0]?.key, 'invoice');
+});
+
 test('detects a meeting with date and time', () => {
   const items = detectAttention({ text: 'Ședință pe 05.10.2026 la ora 18:30, pe Teams.', sentAt: '2026-10-01T10:00:00Z' });
   assert.equal(items.length, 1);

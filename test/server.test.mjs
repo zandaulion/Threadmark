@@ -219,6 +219,17 @@ test('concrete invoices are detected locally for WhatsApp and Gmail', async (t) 
     assert.equal(result.items[0].detectionSource, 'rule');
   }
   assert.equal(jevCalls, 0, 'strong local invoice signals must remain on the server');
+
+  const newsletter = await fetch(`${base}/internal/events`, {
+    method: 'POST', headers,
+    body: JSON.stringify({
+      id: 'gmail:newsletter', sourceId: gmailSource.id, sourceName: gmailSource.name, sourceKind: gmailSource.kind,
+      senderId: 'gmail:sender:newsletter', senderName: 'Newsletter', sentAt: '2026-10-02T12:02:00Z',
+      text: `A profile mentions a business bill and an unusual loophole.${' The story continues without asking the reader to pay.'.repeat(12)} She only needed an internet connection to work abroad.`,
+    }),
+  }).then((response) => response.json());
+  assert.deepEqual(newsletter.items, []);
+  assert.equal(jevCalls, 1, 'ambiguous long-form invoice candidates must fall through to Jev');
 });
 
 test('Gmail local meeting matches require Jev confirmation and fail open when Jev is unavailable', async (t) => {
