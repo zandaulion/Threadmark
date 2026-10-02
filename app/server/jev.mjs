@@ -6,7 +6,7 @@ const QUESTIONS = {
     'Does the message in `message` contain a payment matter that the recipient should notice or act on? The message may be Romanian or English.',
     {
       true: 'The recipient may need to pay, transfer, collect, confirm, record, or follow up about money, fees, dues, contributions, invoices, refunds, or bank details.',
-      false: 'There is no actionable or important payment matter for the recipient.',
+      false: 'There is no actionable or important payment matter for the recipient. A receipt or confirmation for money already paid is informational unless it explicitly asks the recipient to act.',
     },
   ),
   meeting: noul(

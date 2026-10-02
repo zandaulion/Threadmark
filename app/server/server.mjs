@@ -4,6 +4,7 @@ import http from 'node:http';
 import path from 'node:path';
 import { AuthStore, clearCookie, constantTimeTokenMatch, cookieForToken, tokenFromCookie } from './auth.mjs';
 import { loadConfig } from './config.mjs';
+import { isInformationalReceipt } from './detectors.mjs';
 import { JevDetector } from './jev.mjs';
 import { PushService } from './push.mjs';
 import { openDatabase, ThreadmarkStore } from './store.mjs';
@@ -123,16 +124,19 @@ export function createThreadmarkServer(options = {}) {
             return json(res, 200, { accepted: true, outgoing: true, items: [], updatedItems: updates });
           }
           const localDetections = store.detectMessage(body);
+          const informationalReceipt = isInformationalReceipt(body.text);
           const verifyGmailMeeting = isGmailSource(selection.source)
             && localDetections.some((detection) => detection.type === 'meeting');
           const context = settings.contextAware || settings.outgoingMonitoring ? store.recentContext(body) : [];
-          const shouldUseJev = !localDetections.length || verifyGmailMeeting || settings.contextAware || settings.outgoingMonitoring;
-          const analysis = shouldUseJev ? await jev.evaluate(body.text, store.applicableSemanticRules(body), {
-            includeBuiltIns: !localDetections.length || verifyGmailMeeting,
+          const semanticRules = store.applicableSemanticRules(body);
+          const shouldUseJev = (!informationalReceipt && (!localDetections.length || verifyGmailMeeting))
+            || semanticRules.length || settings.contextAware || settings.outgoingMonitoring;
+          const analysis = shouldUseJev ? await jev.evaluate(body.text, semanticRules, {
+            includeBuiltIns: !informationalReceipt && (!localDetections.length || verifyGmailMeeting),
             contextAware: settings.contextAware,
             replyNeeded: settings.outgoingMonitoring,
-            paymentSafety: true,
-            extractDate: true,
+            paymentSafety: !informationalReceipt,
+            extractDate: !informationalReceipt || Boolean(semanticRules.length),
             referenceAt: body.sentAt,
             context,
           }) : { available: false, detections: [], signals: {} };

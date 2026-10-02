@@ -45,6 +45,14 @@ test('keeps nearby invoice evidence local', () => {
   assert.equal(withIban[0]?.key, 'invoice');
 });
 
+test('ignores paid receipts but keeps an explicit payment request', () => {
+  const receipt = detectAttention({ text: 'Test: Your Google Play Order Receipt from 2 Oct 2026\n\nPayment completed: 37,99 RON.' });
+  const unpaid = detectAttention({ text: 'Order receipt update\n\nBalance due: 37,99 RON. Please pay by tomorrow.' });
+  assert.deepEqual(receipt, []);
+  assert.equal(unpaid[0]?.type, 'payment');
+  assert.equal(unpaid[0]?.amountMinor, 3799);
+});
+
 test('detects a meeting with date and time', () => {
   const items = detectAttention({ text: 'Ședință pe 05.10.2026 la ora 18:30, pe Teams.', sentAt: '2026-10-01T10:00:00Z' });
   assert.equal(items.length, 1);

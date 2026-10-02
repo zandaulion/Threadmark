@@ -220,6 +220,17 @@ test('concrete invoices are detected locally for WhatsApp and Gmail', async (t) 
   }
   assert.equal(jevCalls, 0, 'strong local invoice signals must remain on the server');
 
+  const receipt = await fetch(`${base}/internal/events`, {
+    method: 'POST', headers,
+    body: JSON.stringify({
+      id: 'gmail:paid-receipt', sourceId: gmailSource.id, sourceName: gmailSource.name, sourceKind: gmailSource.kind,
+      senderId: 'gmail:sender:store', senderName: 'App store', sentAt: '2026-10-02T12:01:30Z',
+      text: 'Test: Your Google Play Order Receipt from 2 Oct 2026\n\nPayment completed: 37,99 RON.',
+    }),
+  }).then((response) => response.json());
+  assert.deepEqual(receipt.items, []);
+  assert.equal(jevCalls, 0, 'informational paid receipts must not invoke built-in Jev detection');
+
   const newsletter = await fetch(`${base}/internal/events`, {
     method: 'POST', headers,
     body: JSON.stringify({

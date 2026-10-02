@@ -1,4 +1,6 @@
 const PAYMENT_WORDS = /\b(pay|payment|paid|owe|owes|due|transfer|bank|iban|contribution|plata|plăti|platit|plătit|dator|transfer|virament|cont|cotiza|strângem|strangem)\b/iu;
+const RECEIPT_WORDS = /(?:\border receipt\b|\breceipt\b|\border confirmation\b|\bpurchase confirmation\b|\bpayment (?:confirmation|successful|received|completed)\b|\balready paid\b|\bchitan(?:ță|ta)\b|\bconfirmarea pl(?:ă|a)ții\b|\bplata (?:a fost )?(?:efectuat(?:ă|a)|finalizat(?:ă|a)|confirmat(?:ă|a))\b)/iu;
+const PAYMENT_ACTION = /(?:\b(?:please|kindly) pay\b|\bpay (?:now|by|before|until)\b|\b(?:amount|balance|payment) (?:is )?due\b|\byou owe\b|\b(?:must|needs? to) be paid\b|\btransfer (?:the |this )?(?:payment|funds?|money)\b|\b(?:invoice|bill) (?:is )?(?:due|overdue|unpaid)\b|\b(?:vă|va|te) rog (?:să |sa )?(?:plătești|platesti|plata)\b|\b(?:sum(?:a|ă)|total) de plat(?:ă|a)\b|\b(?:scadent(?:ă|a)?|restant(?:ă|a)?|neachitat(?:ă|a)?)\b|\b(?:achită|achita|plătește|plateste|transferă|transfera|virați|virati)\b)/iu;
 const MEETING_WORDS = /\b(meet|meeting|appointment|call|zoom|teams|agenda|întâln|intaln|ședin|sedin|programare|ne vedem|adunare)\b/iu;
 const INVOICE_WORDS = /(?<![\p{L}\p{N}])(?:invoice(?:s)?|bill(?:s)?|billing statement|factur(?:a|ă|i|ii|e|ei|ile|ilor)|aviz(?:ul)? de plat(?:a|ă))(?![\p{L}\p{N}])/iu;
 const INVOICE_ACTION = /(?:\byour\s+(?:new\s+)?(?:invoice|bill)\b|\b(?:download|view|open|pay)\s+(?:your\s+)?(?:invoice|bill)\b|\b(?:invoice|bill)\s+(?:is|was|has been)\s+(?:attached|issued|available|generated|sent|ready|due|overdue)\b|(?<![\p{L}\p{N}])factur(?:a|ă|i|ii|e|ei|ile|ilor)\s+(?:ta|dvs\.?|dumneavoastră|dumneavoastra|este|e|a fost|atașată|atasata|emisă|emisa|disponibilă|disponibila|scadentă|scadenta)(?![\p{L}\p{N}])|\b(?:descarcă|descarca|vezi|consultă|consulta|achită|achita|plătește|plateste)\s+factur(?:a|ă|ile?)(?![\p{L}\p{N}]))/iu;
@@ -18,7 +20,8 @@ export function detectAttention(message) {
   const results = [];
   const amount = text.match(AMOUNT);
   const iban = text.match(IBAN);
-  const invoice = INVOICE_WORDS.test(text) && Boolean(
+  const informationalReceipt = isInformationalReceipt(text);
+  const invoice = !informationalReceipt && INVOICE_WORDS.test(text) && Boolean(
     INVOICE_ACTION.test(text)
     || invoiceEvidenceNearby(text, BILLING_CONTEXT)
     || invoiceEvidenceNearby(text, AMOUNT)
@@ -41,7 +44,7 @@ export function detectAttention(message) {
         iban: iban?.[0] || null,
       },
     });
-  } else if (PAYMENT_WORDS.test(text) && (amount || iban)) {
+  } else if (!informationalReceipt && PAYMENT_WORDS.test(text) && (amount || iban)) {
     const currency = normaliseCurrency(amount?.[2]);
     const numeric = amount ? Number(amount[1].replace(',', '.')) : null;
     results.push({
@@ -77,6 +80,15 @@ export function detectAttention(message) {
     });
   }
   return results;
+}
+
+export function isInformationalReceipt(text) {
+  const value = String(text || '').trim();
+  if (!value) return false;
+  // Gmail normalization starts with the subject. Limiting receipt evidence to
+  // the opening text avoids suppressing a real request that merely mentions an
+  // older receipt later in a long thread or newsletter.
+  return RECEIPT_WORDS.test(value.slice(0, 320)) && !PAYMENT_ACTION.test(value);
 }
 
 function invoiceEvidenceNearby(text, evidencePattern, radius = 160) {
