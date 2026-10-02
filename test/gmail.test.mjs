@@ -82,6 +82,39 @@ test('Gmail connector fetches a full body only after metadata matches a selected
   assert.equal(events.some((event) => event.endpoint === '/internal/events'), false);
 });
 
+test('Gmail sync skips vanished messages and advances its history checkpoint', async () => {
+  const saved = [];
+  const secretStore = {
+    available: () => true,
+    load: () => ({ refreshToken: 'refresh', accessToken: 'access', accessTokenExpiresAt: '2099-01-01T00:00:00Z', email: 'owner@example.test', historyId: '20' }),
+    save: (credentials) => saved.push({ ...credentials }), clear: () => {},
+  };
+  const outbox = { put: () => {}, pending: () => [], delivered: () => {}, failed: () => {}, close: () => {} };
+  const fakeFetch = async (url) => {
+    const value = String(url);
+    if (value.includes('/history?')) return response({
+      historyId: '22',
+      history: [{ messagesAdded: [{ message: { id: 'vanished' } }, { message: { id: 'mail-2' } }] }],
+    });
+    if (value.includes('/messages/vanished?')) return response({ error: { message: 'Requested entity was not found.' } }, 404);
+    if (value.includes('/messages/mail-2?') && value.includes('format=metadata')) return response({
+      id: 'mail-2', threadId: 'thread-2', labelIds: ['INBOX'],
+      payload: { headers: [{ name: 'From', value: 'Utility <billing@example.test>' }, { name: 'Subject', value: 'Invoice' }] },
+    });
+    throw new Error(`Unexpected request: ${url}`);
+  };
+  const connector = new GmailConnector({
+    clientId: 'client', clientSecret: 'secret', redirectUri: 'https://threadmark.test/api/gmail/oauth/callback',
+    appUrl: 'http://app', bridgeToken: 'token', pollSeconds: 60,
+  }, secretStore, outbox, { fetch: fakeFetch });
+
+  await connector.sync();
+
+  assert.equal(connector.credentials.historyId, '22');
+  assert.equal(saved.at(-1).historyId, '22');
+  assert.equal(connector.lastError, null);
+});
+
 test('Gmail sources participate in the existing detector and inbox model', () => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'threadmark-gmail-store-'));
   const db = openDatabase(dataDir);

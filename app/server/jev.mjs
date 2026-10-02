@@ -26,6 +26,13 @@ const QUESTIONS = {
 };
 
 const SIGNAL_QUESTIONS = {
+  invoice: noul(
+    'Does the message in `message` tell the recipient that a real invoice, bill, utility statement, or amount due for them has been issued, attached, is available, or needs review or payment? The message may be Romanian or English.',
+    {
+      true: 'A concrete invoice or bill relevant to the recipient is attached, issued, ready, available through a link or account, due, overdue, or presented for review or payment. An amount does not need to appear in the message.',
+      false: 'The message merely markets or discusses invoicing, billing software, business files, or a hypothetical example; it is only a receipt for something already paid; or no concrete invoice or bill for the recipient is present.',
+    },
+  ),
   urgency: noul(
     'Does the message in `message` require prompt attention or action from the recipient today or very soon? The message may be Romanian or English.',
     {
@@ -83,6 +90,7 @@ export class JevDetector {
   constructor(config = {}, client = null) {
     this.model = String(config.jevModel || 'jev-latest');
     this.threshold = boundedNumber(config.jevThreshold, 0.78, 0.5, 0.99);
+    this.invoiceThreshold = boundedNumber(config.jevInvoiceThreshold, 0.68, 0.5, 0.99);
     this.timeout = boundedNumber(config.jevTimeoutMs, 4_500, 500, 8_000);
     this.enabled = Boolean(config.jevEnabled && (client || config.typesafeApiKey));
     this.lastSuccessAt = null;
@@ -102,6 +110,7 @@ export class JevDetector {
       provider: 'TypeSafe AI',
       model: this.model,
       threshold: this.threshold,
+      invoiceThreshold: this.invoiceThreshold,
       lastSuccessAt: this.lastSuccessAt,
       lastFailureAt: this.lastFailureAt,
     };
@@ -146,7 +155,10 @@ export class JevDetector {
         ? Object.fromEntries(Object.keys(TITLES).map((key) => [key, probability(response.answers?.[key]?.noul)]))
         : {};
       const signals = includeBuiltIns
-        ? { urgency: probability(response.answers?.urgency?.noul) }
+        ? {
+          invoice: probability(response.answers?.invoice?.noul),
+          urgency: probability(response.answers?.urgency?.noul),
+        }
         : {};
       if (includeContext) {
         signals.changesPrevious = probability(response.answers?.changes_previous?.noul);
@@ -191,19 +203,38 @@ export class JevDetector {
       });
       let detections = monitorDetections;
       if (!detections.length && includeBuiltIns) {
-        const [category, confidence] = Object.entries(scores).sort((left, right) => right[1] - left[1])[0];
-        detections = confidence >= this.threshold ? [{
-          type: category,
-          key: `jev-${category}`,
-          title: TITLES[category],
-          confidence,
-          priority: signals.urgency,
-          amountMinor: null,
-          currency: null,
-          eventAt: date?.dueAt || null,
-          notify: true,
-          details: { detector: 'jev', model: response.model || this.model, scores, urgency: signals.urgency, dueAtSource: date?.source || null },
-        }] : [];
+        if (signals.invoice >= this.invoiceThreshold) {
+          detections = [{
+            type: 'payment',
+            key: 'jev-invoice',
+            title: 'Invoice needs attention',
+            confidence: signals.invoice,
+            priority: signals.urgency,
+            amountMinor: null,
+            currency: null,
+            eventAt: date?.dueAt || null,
+            notify: true,
+            details: {
+              detector: 'jev', invoice: true, model: response.model || this.model,
+              probability: signals.invoice, threshold: this.invoiceThreshold,
+              scores, urgency: signals.urgency, dueAtSource: date?.source || null,
+            },
+          }];
+        } else {
+          const [category, confidence] = Object.entries(scores).sort((left, right) => right[1] - left[1])[0];
+          detections = confidence >= this.threshold ? [{
+            type: category,
+            key: `jev-${category}`,
+            title: TITLES[category],
+            confidence,
+            priority: signals.urgency,
+            amountMinor: null,
+            currency: null,
+            eventAt: date?.dueAt || null,
+            notify: true,
+            details: { detector: 'jev', model: response.model || this.model, scores, urgency: signals.urgency, dueAtSource: date?.source || null },
+          }] : [];
+        }
       }
       this.lastSuccessAt = new Date().toISOString();
       return { ...this.status(), available: true, model: response.model || this.model, scores, signals, date, monitorScores, detections };

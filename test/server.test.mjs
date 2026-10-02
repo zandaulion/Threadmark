@@ -163,6 +163,64 @@ test('invite, group selection, bridge ingestion and resolution work together', a
   assert.equal(semanticRuleEvent.items[0].priority, 0.93);
 });
 
+test('concrete invoices are detected locally for WhatsApp and Gmail', async (t) => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'threadmark-invoices-'));
+  let jevCalls = 0;
+  const jev = {
+    status: () => ({ enabled: true, provider: 'TypeSafe AI', model: 'jev-test', threshold: 0.78, invoiceThreshold: 0.68 }),
+    async evaluate() { jevCalls += 1; return { available: true, scores: {}, signals: {}, detections: [] }; },
+  };
+  const app = createThreadmarkServer({
+    config: {
+      dataDir,
+      webDir: path.join(root, 'app/web'),
+      adminToken: '1'.repeat(64),
+      bridgeToken: '2'.repeat(64),
+      publicBaseUrl: 'https://threadmark.test',
+      cookieSecure: false,
+    },
+    push: { enabled: false, publicKey: '', notifyItem: async () => {} },
+    jev,
+  });
+  const contact = { id: '15550100005@s.whatsapp.net', name: 'Household', kind: 'contact' };
+  const gmailSource = { id: 'gmail:label:INBOX', name: 'Inbox', kind: 'gmail_label' };
+  app.store.upsertContacts([contact]);
+  app.store.selectContact(contact.id, true);
+  app.store.upsertGmailSources([gmailSource]);
+  app.store.selectGmailSource(gmailSource.id, true);
+  await new Promise((resolve) => app.server.listen(0, '127.0.0.1', resolve));
+  t.after(async () => { await app.close(); fs.rmSync(dataDir, { recursive: true, force: true }); });
+  const base = `http://127.0.0.1:${app.server.address().port}`;
+  const headers = { 'x-bridge-token': '2'.repeat(64), 'content-type': 'application/json' };
+
+  const whatsapp = await fetch(`${base}/internal/events`, {
+    method: 'POST', headers,
+    body: JSON.stringify({
+      id: 'whatsapp-invoice', sourceId: contact.id, sourceName: contact.name, sourceKind: contact.kind,
+      senderId: contact.id, senderName: contact.name, sentAt: '2026-10-02T12:00:00Z',
+      text: 'Factura de gaze naturale este disponibilă în contul tău.',
+    }),
+  }).then((response) => response.json());
+  const gmail = await fetch(`${base}/internal/events`, {
+    method: 'POST', headers,
+    body: JSON.stringify({
+      id: 'gmail:invoice', sourceId: gmailSource.id, sourceName: gmailSource.name, sourceKind: gmailSource.kind,
+      senderId: 'gmail:sender:example', senderName: 'Utility', sentAt: '2026-10-02T12:01:00Z',
+      text: 'Your new electricity invoice is ready. View it in your account.',
+    }),
+  }).then((response) => response.json());
+
+  for (const result of [whatsapp, gmail]) {
+    assert.equal(result.items.length, 1);
+    assert.equal(result.items[0].type, 'payment');
+    assert.equal(result.items[0].title, 'Invoice needs attention');
+    assert.equal(result.items[0].details.invoice, true);
+    assert.equal(result.items[0].notify, true);
+    assert.equal(result.items[0].detectionSource, 'rule');
+  }
+  assert.equal(jevCalls, 0, 'strong local invoice signals must remain on the server');
+});
+
 test('Gmail local meeting matches require Jev confirmation and fail open when Jev is unavailable', async (t) => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'threadmark-gmail-verification-'));
   const calls = [];

@@ -22,8 +22,8 @@ The default Podman deployment puts the app and both connectors on one network. C
 3. The bridge checks its cached routing configuration. Selected attachments can be processed locally before delivery.
 4. The durable outbox posts the event to the app using `BRIDGE_TOKEN`. Failed deliveries stay queued.
 5. The app verifies that the source exists and is explicitly selected. Unselected content is rejected before detection or long-term storage.
-6. Deterministic payment and meeting detectors plus enabled local phrase rules run first.
-7. If nothing matches, optional Jev built-ins and applicable semantic monitors evaluate the message. A local Gmail meeting candidate also goes to Jev for confirmation. Context/reply settings can explicitly request additional Jev signals.
+6. Deterministic invoice, payment and meeting detectors plus enabled local phrase rules run first.
+7. If nothing matches, optional Jev built-ins and applicable semantic monitors evaluate the message. The narrow invoice judgment has its own threshold and maps to a Payment item. A local Gmail meeting candidate also goes to Jev for confirmation. Context/reply settings can explicitly request additional Jev signals.
 8. A contact image that still has no match can become a local **Photo needs review** item.
 9. Only matched messages and attention items are stored. The server broadcasts changes through SSE and optionally sends Web Push.
 10. The browser renders the current filtered feed and applies actions through authenticated APIs.
@@ -56,15 +56,15 @@ Legacy group-style fields are accepted internally, but new connectors should pro
 
 ### Local deterministic layer
 
-`app/server/detectors.mjs` recognizes Romanian and English payment and meeting signals. It extracts amount, normalized currency, IBAN, dates, times and links where possible. `app/server/rules.mjs` evaluates case- and accent-insensitive phrase rules with any/all matching and optional source scope.
+`app/server/detectors.mjs` recognizes Romanian and English invoice, payment and meeting signals. Concrete invoice notices can match without an amount or IBAN; direct-recipient/action wording or a utility/billing context keeps this rule narrower than a bare keyword match. It extracts amount, normalized currency, IBAN, dates, times and links where possible. `app/server/rules.mjs` evaluates case- and accent-insensitive phrase rules with any/all matching and optional source scope.
 
 This layer is fast, explainable and does not send text off the server.
 
 ### Semantic layer
 
-`app/server/jev.mjs` expresses payment, meeting, reminder, urgency, context and payment-safety questions as TypeSafe units. Enabled semantic monitors are added as narrow questions and batched into the same System One request.
+`app/server/jev.mjs` expresses invoice, payment, meeting, reminder, urgency, context and payment-safety questions as TypeSafe units. The invoice Noul asks specifically whether a concrete bill for the recipient has been issued, attached, made available or needs action; it excludes marketing, software features and hypothetical examples. Enabled semantic monitors are added as narrow questions and batched into the same System One request.
 
-Local matches normally prevent a Jev call. Context-aware and reply features are explicit exceptions because they request semantic enrichment even when a local detector matched. Gmail meeting candidates are another narrow exception: Jev must meet the configured meeting threshold before the local item is stored. Confirmed items retain local extraction details and record the Jev model, probability and threshold. API failure or a missing score is fail-open, so ingestion continues and the local meeting is retained.
+Local matches normally prevent a Jev call, including strong invoice matches from either WhatsApp or Gmail. For otherwise-unmatched text, an invoice probability at or above `JEV_INVOICE_THRESHOLD` becomes a Payment item before the generic category scores are considered. Context-aware and reply features are explicit exceptions because they request semantic enrichment even when a local detector matched. Gmail meeting candidates are another narrow exception: Jev must meet the configured meeting threshold before the local item is stored. Confirmed items retain local extraction details and record the Jev model, probability and threshold. API failure or a missing score is fail-open, so ingestion continues and the local meeting is retained.
 
 ### Enrichment
 

@@ -25,6 +25,7 @@ export function loadConfig(overrides = {}) {
     jevEnabled: process.env.JEV_ENABLED !== '0' && Boolean(typesafeApiKey),
     jevModel: process.env.JEV_MODEL || 'jev-latest',
     jevThreshold: boundedNumber(process.env.JEV_THRESHOLD, 0.78, 0.5, 0.99),
+    jevInvoiceThreshold: boundedNumber(process.env.JEV_INVOICE_THRESHOLD, 0.68, 0.5, 0.99),
     jevTimeoutMs: boundedNumber(process.env.JEV_TIMEOUT_MS, 4_500, 500, 8_000),
     ...overrides,
   };

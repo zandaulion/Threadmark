@@ -173,7 +173,15 @@ export class GmailConnector {
         newestHistoryId = String(history.historyId || newestHistoryId);
         pageToken = String(history.nextPageToken || '');
       } while (pageToken);
-      for (const messageId of messageIds) await this.processMessage(messageId);
+      for (const messageId of messageIds) {
+        try { await this.processMessage(messageId); }
+        catch (error) {
+          // A message can be deleted or moved out of reach between history.list
+          // and messages.get. Skip that one message so the checkpoint can still
+          // advance instead of retrying the same stale history page forever.
+          if (error.status !== 404) throw error;
+        }
+      }
       this.credentials.historyId = newestHistoryId;
       this.secretStore.save(this.credentials);
       this.lastEventAt = new Date().toISOString();

@@ -30,3 +30,11 @@ test('contact photos that need review have a specific notification title', () =>
   assert.equal(payload.title, 'Photo needs review');
   assert.equal(payload.body, 'Family contact: Photo needs review');
 });
+
+test('invoices have a specific notification title', () => {
+  const payload = notificationPayload({
+    id: 'invoice:item', type: 'payment', title: 'Invoice needs attention', priority: null,
+    source: { name: 'Inbox' }, senderName: 'Utility', details: { invoice: true },
+  });
+  assert.equal(payload.title, 'Invoice received');
+});

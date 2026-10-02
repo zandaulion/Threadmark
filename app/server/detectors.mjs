@@ -1,5 +1,8 @@
 const PAYMENT_WORDS = /\b(pay|payment|paid|owe|owes|due|transfer|bank|iban|invoice|contribution|plata|plăti|platit|plătit|dator|transfer|virament|cont|factur|cotiza|strângem|strangem)\b/iu;
 const MEETING_WORDS = /\b(meet|meeting|appointment|call|zoom|teams|agenda|întâln|intaln|ședin|sedin|programare|ne vedem|adunare)\b/iu;
+const INVOICE_WORDS = /(?<![\p{L}\p{N}])(?:invoice(?:s)?|bill(?:s)?|billing statement|factur(?:a|ă|i|ii|e|ei|ile|ilor)|aviz(?:ul)? de plat(?:a|ă))(?![\p{L}\p{N}])/iu;
+const INVOICE_ACTION = /(?:\b(?:your|new|attached|issued|available|ready|download|view|open|pay|due|overdue)\s+(?:invoice|bill)\b|\b(?:invoice|bill)\s+(?:is|was|has been)\s+(?:attached|issued|available|generated|sent|ready|due|overdue)\b|(?<![\p{L}\p{N}])factur(?:a|ă|i|ii|e|ei|ile|ilor)\s+(?:ta|dvs\.?|dumneavoastră|dumneavoastra|este|e|a fost|atașată|atasata|emisă|emisa|disponibilă|disponibila|scadentă|scadenta)(?![\p{L}\p{N}])|\b(?:descarcă|descarca|vezi|consultă|consulta|achită|achita|plătește|plateste)\s+factur(?:a|ă|ile?)(?![\p{L}\p{N}]))/iu;
+const BILLING_CONTEXT = /(?<![\p{L}\p{N}])(?:gas|natural gas|gaz|gaze(?: naturale)?|electricity|electric|energy|water|internet|telecom|telephone|phone|utility|utilities|energie|electricitate|apă|apa|canalizare|salubritate|întreținere|intretinere|asigurare|insurance|rent|chirie)(?![\p{L}\p{N}])/iu;
 const AMOUNT = /(?:\b(?:RON|LEI|EUR|EURO|USD)\s*)?(\d{1,6}(?:[.,]\d{1,2})?)\s*(RON|LEI|EUR|EURO|USD|€|\$)\b/iu;
 const IBAN = /\b[A-Z]{2}\d{2}[A-Z0-9]{11,30}\b/u;
 // Keep the separator to a colon so dotted dates such as 05.10.2026 are not
@@ -15,7 +18,25 @@ export function detectAttention(message) {
   const results = [];
   const amount = text.match(AMOUNT);
   const iban = text.match(IBAN);
-  if (PAYMENT_WORDS.test(text) && (amount || iban)) {
+  const invoice = INVOICE_WORDS.test(text) && Boolean(amount || iban || INVOICE_ACTION.test(text) || BILLING_CONTEXT.test(text));
+  if (invoice) {
+    const currency = normaliseCurrency(amount?.[2]);
+    const numeric = amount ? Number(amount[1].replace(',', '.')) : null;
+    results.push({
+      type: 'payment',
+      key: 'invoice',
+      title: amount ? `Invoice: ${amount[0].trim()}` : 'Invoice needs attention',
+      confidence: amount || iban ? 0.96 : 0.9,
+      amountMinor: Number.isFinite(numeric) ? Math.round(numeric * 100) : null,
+      currency,
+      eventAt: null,
+      details: {
+        invoice: true,
+        amount: amount?.[0]?.trim() || null,
+        iban: iban?.[0] || null,
+      },
+    });
+  } else if (PAYMENT_WORDS.test(text) && (amount || iban)) {
     const currency = normaliseCurrency(amount?.[2]);
     const numeric = amount ? Number(amount[1].replace(',', '.')) : null;
     results.push({

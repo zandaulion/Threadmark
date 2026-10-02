@@ -11,6 +11,28 @@ test('detects a Romanian payment with amount and IBAN', () => {
   assert.equal(items[0].details.iban, 'RO00TEST0000000000000000');
 });
 
+test('detects a Romanian utility invoice without an amount', () => {
+  const items = detectAttention({ text: 'Factura de gaze naturale este disponibilă în contul tău.' });
+  assert.equal(items.length, 1);
+  assert.equal(items[0].type, 'payment');
+  assert.equal(items[0].key, 'invoice');
+  assert.equal(items[0].title, 'Invoice needs attention');
+  assert.equal(items[0].details.invoice, true);
+  assert.equal(items[0].amountMinor, null);
+});
+
+test('detects a concrete English invoice notice without an amount', () => {
+  const items = detectAttention({ text: 'Your new invoice is ready. View it in your account.' });
+  assert.equal(items.length, 1);
+  assert.equal(items[0].key, 'invoice');
+  assert.equal(items[0].details.invoice, true);
+});
+
+test('does not treat generic invoicing marketing as an invoice', () => {
+  const items = detectAttention({ text: 'Learn how invoice automation can improve your business.' });
+  assert.equal(items.some((item) => item.key === 'invoice'), false);
+});
+
 test('detects a meeting with date and time', () => {
   const items = detectAttention({ text: 'Ședință pe 05.10.2026 la ora 18:30, pe Teams.', sentAt: '2026-10-01T10:00:00Z' });
   assert.equal(items.length, 1);

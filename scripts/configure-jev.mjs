@@ -26,6 +26,7 @@ content = setValue(content, 'JEV_ENABLED', disabling ? '0' : '1');
 if (!disabling) content = setValue(content, 'TYPESAFE_API_KEY', apiKey);
 content = ensureValue(content, 'JEV_MODEL', 'jev-latest');
 content = ensureValue(content, 'JEV_THRESHOLD', '0.78');
+content = ensureValue(content, 'JEV_INVOICE_THRESHOLD', '0.68');
 content = ensureValue(content, 'JEV_TIMEOUT_MS', '4500');
 
 const temporary = `${destination}.jev-${process.pid}`;

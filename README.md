@@ -49,9 +49,9 @@ The two connectors and app run as separate rootless Podman containers on a priva
 - Canonical phone-contact identity resolution for WhatsApp's private LID delivery addresses.
 - Search for known groups and people, with phone-number lookup for contacts WhatsApp has not replayed to the linked device.
 - Import selected contacts through the browser's privacy-preserving Contact Picker when the device supports it.
-- Romanian and English payment and meeting detectors.
+- Romanian and English invoice, payment and meeting detectors. Concrete invoice notices do not require an amount or IBAN.
 - Local custom rules with any/all phrase matching, category, chat scope, enable/disable controls, optional notifications and a sample-text tester.
-- Optional Jev semantic fallback for locally unmatched payment, meeting and reminder messages, plus Gmail meeting verification to suppress newsletter and marketing false positives.
+- Optional Jev semantic fallback for locally unmatched invoice, payment, meeting and reminder messages, plus Gmail meeting verification to suppress newsletter and marketing false positives.
 - User-defined semantic monitors with plain-language conditions, per-monitor thresholds, chat scope, notifications and a Jev sample tester.
 - Jev urgency probability stored as a priority signal; high-urgency items rise in the feed and receive a visible badge and urgent notification title.
 - Local absolute/relative deadline extraction, due/overdue badges and downloadable calendar events.
@@ -230,7 +230,7 @@ Back up all three data directories together with the environment file, using enc
 
 ## Jev semantic detection
 
-Threadmark always runs its deterministic detectors and local phrase rules first. If they find nothing and Jev is enabled, the app sends one request containing the message text, three independent built-in Noul questions (payment, meeting and reminder), an urgency Noul, and the applicable enabled semantic-monitor questions. Multiple questions are batched in that request. A matching custom monitor takes precedence over the generic fallback and uses its own threshold; otherwise the strongest built-in result becomes an attention item when it reaches `JEV_THRESHOLD` (default `0.78`).
+Threadmark always runs its deterministic detectors and local phrase rules first. Concrete Romanian or English invoice notices are stored locally as Payment items even when the message contains no amount or IBAN. If the local layer finds nothing and Jev is enabled, the app sends one request containing the message text, independent invoice, payment, meeting, reminder and urgency Noul questions, plus applicable enabled semantic-monitor questions. Multiple questions are batched in that request. A matching custom monitor takes precedence. Otherwise a positive invoice judgment becomes a Payment item at `JEV_INVOICE_THRESHOLD` (default `0.68`); the strongest generic built-in result uses `JEV_THRESHOLD` (default `0.78`). The lower invoice threshold reflects the higher cost of missing a bill, while the narrow question explicitly excludes marketing and hypothetical invoicing content.
 
 Gmail meeting candidates are the narrow exception to the local-first short circuit. Marketing email often combines words such as “call” with dates or times, so a local Gmail meeting match is sent through the same Jev questions. The local meeting is kept only when Jev's meeting probability reaches `JEV_THRESHOLD`; confirmed cards show **Rule + Jev**. An alternate Jev category may still be emitted when it reaches the threshold. If Jev is unavailable or omits the meeting score, Threadmark fails open and keeps the local meeting. WhatsApp local matches retain their existing on-machine-only behavior.
 

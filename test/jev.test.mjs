@@ -15,6 +15,7 @@ test('Jev receives message text without WhatsApp identity metadata', async () =>
           payment: { type: 'noul', noul: 0.91 },
           meeting: { type: 'noul', noul: 0.12 },
           reminder: { type: 'noul', noul: 0.67 },
+          invoice: { type: 'noul', noul: 0.08 },
           urgency: { type: 'noul', noul: 0.88 },
         },
         usage: { input_tokens: 100, output_tokens: 10 },
@@ -25,7 +26,7 @@ test('Jev receives message text without WhatsApp identity metadata', async () =>
   const result = await detector.evaluate('Trebuie achitată contribuția pentru excursie.');
   assert.deepEqual(request.state, { message: 'Trebuie achitată contribuția pentru excursie.' });
   assert.equal(Object.keys(request.state).length, 1);
-  assert.equal(Object.keys(request.questions).length, 4);
+  assert.equal(Object.keys(request.questions).length, 5);
   assert.deepEqual(options, { timeout: 3_000, retry: { maxRetries: 0 } });
   assert.equal(result.detections.length, 1);
   assert.equal(result.detections[0].type, 'payment');
@@ -33,6 +34,31 @@ test('Jev receives message text without WhatsApp identity metadata', async () =>
   assert.equal(result.detections[0].priority, 0.88);
   assert.equal(result.signals.urgency, 0.88);
   assert.deepEqual(result.detections[0].details.scores, { payment: 0.91, meeting: 0.12, reminder: 0.67 });
+});
+
+test('Jev promotes a concrete invoice to a payment at the invoice threshold', async () => {
+  const client = { async systemOne() {
+    return {
+      model: 'jev-test',
+      answers: {
+        payment: { type: 'noul', noul: 0.37 },
+        meeting: { type: 'noul', noul: 0.03 },
+        reminder: { type: 'noul', noul: 0.16 },
+        invoice: { type: 'noul', noul: 0.86 },
+        urgency: { type: 'noul', noul: 0.12 },
+      },
+    };
+  } };
+  const detector = new JevDetector({ jevEnabled: true, jevThreshold: 0.78, jevInvoiceThreshold: 0.68 }, client);
+  const result = await detector.evaluate('Factura este disponibilă în contul de client.');
+  assert.equal(result.signals.invoice, 0.86);
+  assert.equal(result.detections.length, 1);
+  assert.equal(result.detections[0].type, 'payment');
+  assert.equal(result.detections[0].key, 'jev-invoice');
+  assert.equal(result.detections[0].title, 'Invoice needs attention');
+  assert.equal(result.detections[0].confidence, 0.86);
+  assert.equal(result.detections[0].details.invoice, true);
+  assert.equal(result.detections[0].details.threshold, 0.68);
 });
 
 test('Jev keeps below-threshold judgments as no match', async () => {
@@ -75,7 +101,7 @@ test('Jev batches semantic monitors and applies each monitor threshold', async (
     { id: 'transport', kind: 'semantic', name: 'School transport', condition: 'The school transport plan changed.', category: 'meeting', threshold: 0.75, notify: false },
   ];
   const result = await detector.evaluate('Tu ce variantă alegi pentru transport?', monitors);
-  assert.equal(Object.keys(request.questions).length, 6);
+  assert.equal(Object.keys(request.questions).length, 7);
   assert.equal(request.questions.monitor_0.instructions.monitoring_condition, monitors[0].condition);
   assert.equal(result.monitorScores.decision, 0.92);
   assert.equal(result.monitorScores.transport, 0.74);

@@ -170,7 +170,7 @@ function renderRules() {
         <div><h3>${escapeHtml(rule.name)}</h3><div class="rule-meta"><span class="rule-chip ${rule.kind === 'semantic' ? 'semantic' : ''}">${rule.kind === 'semantic' ? 'Jev' : 'Local'}</span><span class="rule-chip">${escapeHtml(categoryLabel(rule.category))}</span>${ruleDescription(rule)}<span>·</span><span>${rule.scope === 'all' ? 'All monitored sources' : `${rule.sourceIds.length} selected sources`}</span>${rule.notify ? '<span>· Alerts</span>' : ''}</div></div>
         <div class="rule-actions"><span class="switch"><input type="checkbox" data-rule-enabled="${escapeHtml(rule.id)}" ${rule.enabled ? 'checked' : ''} aria-label="Enable ${escapeHtml(rule.name)}"><span class="switch-ui"></span></span><button class="rule-action" type="button" data-rule-edit="${escapeHtml(rule.id)}">Edit</button><button class="rule-action" type="button" data-rule-delete="${escapeHtml(rule.id)}">Delete</button></div>
       </article>`).join('')
-    : '<div class="empty-state compact"><p>No custom rules yet. Built-in payment and meeting detection is still active.</p></div>';
+    : '<div class="empty-state compact"><p>No custom rules yet. Built-in invoice, payment, and meeting detection is still active.</p></div>';
 }
 
 function renderSources() {
@@ -259,7 +259,7 @@ function renderDetection() {
   const enabled = Boolean(state.detection.enabled);
   $('#jev-state').textContent = enabled ? 'Active' : 'Not configured';
   $('#jev-copy').textContent = enabled
-    ? `Local detection runs first. Unmatched selected messages and Gmail meeting candidates are checked by ${state.detection.provider} ${state.detection.model}.`
+    ? `Local detection runs first. Unmatched selected messages and Gmail meeting candidates are checked by ${state.detection.provider} ${state.detection.model}. Invoice judgments use a ${Math.round((state.detection.invoiceThreshold || .68) * 100)}% threshold.`
     : 'Local detectors and custom rules are active. Add a TypeSafe API key on the server to enable the Jev fallback.';
   $('#jev-test').hidden = !enabled;
   $('#privacy-copy').textContent = enabled
@@ -799,7 +799,7 @@ function registerModelTools() {
   register({
     name: 'list_attention_items',
     title: 'List attention items',
-    description: 'List currently open payment and meeting items detected by Threadmark.',
+    description: 'List currently open invoice, payment, meeting, and reminder items detected by Threadmark.',
     inputSchema: { type: 'object', properties: { type: { type: 'string', enum: ['all', 'payment', 'meeting', 'reminder'] } }, additionalProperties: false },
     annotations: { readOnlyHint: true, untrustedContentHint: true },
     async execute(input) {
@@ -810,7 +810,7 @@ function registerModelTools() {
   register({
     name: 'set_attention_item_status',
     title: 'Update attention item',
-    description: 'Mark a Threadmark payment or meeting item as done or reopen it.',
+    description: 'Mark a Threadmark attention item as done or reopen it.',
     inputSchema: { type: 'object', properties: { id: { type: 'string' }, status: { type: 'string', enum: ['open', 'done'] } }, required: ['id', 'status'], additionalProperties: false },
     annotations: { readOnlyHint: false, untrustedContentHint: false },
     async execute(input) {

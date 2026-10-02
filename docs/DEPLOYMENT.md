@@ -36,6 +36,7 @@ By default this writes `~/.config/threadmark/server.env` and refuses to overwrit
 | `TYPESAFE_API_KEY` | TypeSafe AI credential | empty |
 | `JEV_MODEL` | TypeSafe model name | `jev-latest` |
 | `JEV_THRESHOLD` | Built-in semantic threshold | `0.78` |
+| `JEV_INVOICE_THRESHOLD` | Narrow invoice judgment threshold | `0.68` |
 | `JEV_TIMEOUT_MS` | Maximum Jev request time | `4500` |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google OAuth web client | empty until configured |
 | `GMAIL_OAUTH_REDIRECT_URI` | Exact authorized callback URI | generated from `PUBLIC_BASE_URL` |
