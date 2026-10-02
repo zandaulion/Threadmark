@@ -47,6 +47,7 @@ Before a release also build all three container images and check `/api/health` i
 - Treat media as temporary and enforce byte/time limits.
 - Return one stable attention-item shape from every detector.
 - Broadcast mutations over SSE so all open PWAs converge.
+- Treat SSE as opportunistic on mobile: foreground lifecycle reconciliation must keep the visible feed and counters correct after suspension.
 - Preserve usable behavior when Jev, push or the bridge is temporarily unavailable.
 
 ## Add a local detector

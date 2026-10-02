@@ -61,7 +61,7 @@ The two connectors and app run as separate rootless Podman containers on a priva
 - Conservative payment warnings for changed details, changed amounts, possible duplicates and unusual credential/payment language.
 - Optional local image/PDF OCR and multilingual voice-note transcription with Tesseract, Poppler and whisper.cpp inside the bridge container.
 - Source excerpts, confidence, group or person, sender and detected details.
-- Mark done/reopen data model and live updates through SSE.
+- Mark done/reopen data model, live updates through SSE, and automatic feed/counter reconciliation whenever the PWA returns to the foreground.
 - Optional Web Push notifications.
 - Network-first PWA shell with automatic safe updates and `/bust` recovery.
 - Rootless Podman Quadlet deployment and `podman compose` support.

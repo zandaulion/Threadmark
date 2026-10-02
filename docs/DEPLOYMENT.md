@@ -267,6 +267,13 @@ To restore, stop all services, replace every location with the matching backup, 
 - Verify HTTPS and `COOKIE_SECURE=1`.
 - Check browser/OS permission and open the installed PWA once.
 
+**Counters remain stale after returning to the PWA**
+
+- Confirm the app container is healthy and `/api/summary` is reachable from the device.
+- Close and reopen an already-running PWA once after upgrading so it loads the foreground-reconciliation release.
+- If the old shell remains installed, open `/bust` once to unregister stale service workers and clear Threadmark caches, then reopen the app.
+- Check the browser console for failed `/api/summary`, `/api/feed` or `/api/stream` requests.
+
 **Media extraction fails**
 
 - Confirm attachment reading is enabled.
