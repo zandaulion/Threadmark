@@ -31,6 +31,11 @@ test('workflow preferences, feedback, snoozing, reply completion and payment war
     const second = store.ingestMessage({ id: 'pay-2', groupId: sourceId, groupName: 'Family', senderName: 'Sample Sender', sentAt: '2026-10-01T11:00:00Z', text: 'Plata este 50 lei în RO00DEMO0000000000000000.' });
     assert.ok(second.items[0].details.safetyAlerts.some((alert) => alert.includes('Bank details changed')));
 
+    store.ingestMessage({ id: 'subscription-1', groupId: sourceId, groupName: 'Family', senderName: 'Store', sentAt: '2026-10-01T11:05:00Z', text: 'Your subscription has renewed. Receipt total: 49,99 RON.' });
+    const subscription = store.ingestMessage({ id: 'subscription-2', groupId: sourceId, groupName: 'Family', senderName: 'Store', sentAt: '2026-10-01T11:10:00Z', text: 'Your subscription has renewed. Receipt total: 49,99 RON.' });
+    assert.equal(subscription.items[0].details.subscriptionEvent, 'renewed');
+    assert.equal(subscription.items[0].details.safetyAlerts, undefined, 'routine renewals must not be labeled duplicate payment requests');
+
     const until = new Date(Date.now() + 3_600_000).toISOString();
     assert.equal(store.snoozeItem(first.items[0].id, until).snoozedUntil, until);
     assert.equal(store.listItems({ status: 'snoozed' }).length, 1);

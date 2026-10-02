@@ -1,6 +1,16 @@
 const PAYMENT_WORDS = /\b(pay|payment|paid|owe|owes|due|transfer|bank|iban|contribution|plata|plăti|platit|plătit|dator|transfer|virament|cont|cotiza|strângem|strangem)\b/iu;
 const RECEIPT_WORDS = /(?:\border receipt\b|\breceipt\b|\border confirmation\b|\bpurchase confirmation\b|\bpayment (?:confirmation|successful|received|completed)\b|\balready paid\b|\bchitan(?:ță|ta)\b|\bconfirmarea pl(?:ă|a)ții\b|\bplata (?:a fost )?(?:efectuat(?:ă|a)|finalizat(?:ă|a)|confirmat(?:ă|a))\b)/iu;
 const PAYMENT_ACTION = /(?:\b(?:please|kindly) pay\b|\bpay (?:now|by|before|until)\b|\b(?:amount|balance|payment) (?:is )?due\b|\byou owe\b|\b(?:must|needs? to) be paid\b|\btransfer (?:the |this )?(?:payment|funds?|money)\b|\b(?:invoice|bill) (?:is )?(?:due|overdue|unpaid)\b|\b(?:vă|va|te) rog (?:să |sa )?(?:plătești|platesti|plata)\b|\b(?:sum(?:a|ă)|total) de plat(?:ă|a)\b|\b(?:scadent(?:ă|a)?|restant(?:ă|a)?|neachitat(?:ă|a)?)\b|\b(?:achită|achita|plătește|plateste|transferă|transfera|virați|virati)\b)/iu;
+const SUBSCRIPTION_CONTEXT = /\b(subscription|membership|member plan|subscribed|resubscribed|re-subscribed|abonament|subscrip(?:ție|tie))\b/iu;
+const TEST_TRANSACTION = /^\s*(?:test\s*:|test (?:order|purchase|transaction)\b)/iu;
+const SUBSCRIPTION_EVENTS = [
+  { kind: 'payment-failed', title: 'Subscription payment failed', confidence: 0.98, priority: 0.95, pattern: /(?:\b(?:subscription|membership|abonament)[\s\S]{0,80}\b(?:payment|renewal|plata|reînnoirea|reinnoirea)[\s\S]{0,40}\b(?:failed|declined|rejected|unsuccessful|eșuat(?:ă|a)|esuat(?:ă|a)|refuzat(?:ă|a))\b|\b(?:could not|couldn['’]t|unable to) (?:process|charge)[\s\S]{0,60}\b(?:subscription|membership)\b)/iu },
+  { kind: 'price-change', title: 'Subscription price changed', confidence: 0.94, priority: 0.85, pattern: /(?:\b(?:subscription|membership|abonament)[\s\S]{0,80}\b(?:price|rate|cost|preț|pret|tarif)[\s\S]{0,40}\b(?:change|changes|changing|increase|increases|crește|creste|modific)|\b(?:price|rate|cost|prețul|pretul|tariful)[\s\S]{0,50}\b(?:subscription|membership|abonament)[\s\S]{0,40}\b(?:change|increase|new|nou))/iu },
+  { kind: 'expiring', title: 'Subscription expires soon', confidence: 0.93, priority: 0.82, pattern: /\b(?:subscription|membership|abonament)[\s\S]{0,60}\b(?:expires?|expiring|ends?|ending|expir(?:ă|a)|se (?:încheie|incheie))\b/iu },
+  { kind: 'cancelled', title: 'Subscription cancelled', confidence: 0.95, priority: null, pattern: /(?:\b(?:subscription|membership|abonament)[\s\S]{0,60}\b(?:cancelled|canceled|terminated|anulat|oprit)|\b(?:will not|won['’]t|nu se va) (?:auto-?renew|renew|reînnoi|reinnoi)\b)/iu },
+  { kind: 'renewed', title: 'Subscription renewed', confidence: 0.94, priority: null, pattern: /(?:\b(?:subscription|membership|abonament)[\s\S]{0,60}\b(?:renewed|renewal (?:confirmed|complete|successful)|reînnoit|reinnoit|reînnoirea (?:a fost )?confirmat(?:ă|a))\b|\b(?:will|scheduled to|se va) (?:auto-?renew|renew|reînnoi|reinnoi)\b)/iu },
+  { kind: 'started', title: 'Subscription started', confidence: 0.93, priority: null, pattern: /(?:\b(?:subscription|membership|abonament)[\s\S]{0,60}\b(?:started|activated|active|confirmed|reactivated|început|inceput|activat|reactivat)\b|\b(?:you(?:'ve| have)?|ați|ati) (?:subscribed|resubscribed|re-subscribed)\b)/iu },
+];
 const MEETING_WORDS = /\b(meet|meeting|appointment|call|zoom|teams|agenda|întâln|intaln|ședin|sedin|programare|ne vedem|adunare)\b/iu;
 const INVOICE_WORDS = /(?<![\p{L}\p{N}])(?:invoice(?:s)?|bill(?:s)?|billing statement|factur(?:a|ă|i|ii|e|ei|ile|ilor)|aviz(?:ul)? de plat(?:a|ă))(?![\p{L}\p{N}])/iu;
 const INVOICE_ACTION = /(?:\byour\s+(?:new\s+)?(?:invoice|bill)\b|\b(?:download|view|open|pay)\s+(?:your\s+)?(?:invoice|bill)\b|\b(?:invoice|bill)\s+(?:is|was|has been)\s+(?:attached|issued|available|generated|sent|ready|due|overdue)\b|(?<![\p{L}\p{N}])factur(?:a|ă|i|ii|e|ei|ile|ilor)\s+(?:ta|dvs\.?|dumneavoastră|dumneavoastra|este|e|a fost|atașată|atasata|emisă|emisa|disponibilă|disponibila|scadentă|scadenta)(?![\p{L}\p{N}])|\b(?:descarcă|descarca|vezi|consultă|consulta|achită|achita|plătește|plateste)\s+factur(?:a|ă|ile?)(?![\p{L}\p{N}]))/iu;
@@ -21,13 +31,16 @@ export function detectAttention(message) {
   const amount = text.match(AMOUNT);
   const iban = text.match(IBAN);
   const informationalReceipt = isInformationalReceipt(text);
-  const invoice = !informationalReceipt && INVOICE_WORDS.test(text) && Boolean(
+  const subscription = detectSubscription(text, amount);
+  const invoice = !subscription && !informationalReceipt && INVOICE_WORDS.test(text) && Boolean(
     INVOICE_ACTION.test(text)
     || invoiceEvidenceNearby(text, BILLING_CONTEXT)
     || invoiceEvidenceNearby(text, AMOUNT)
     || invoiceEvidenceNearby(text, IBAN),
   );
-  if (invoice) {
+  if (subscription) {
+    results.push(subscription);
+  } else if (invoice) {
     const currency = normaliseCurrency(amount?.[2]);
     const numeric = amount ? Number(amount[1].replace(',', '.')) : null;
     results.push({
@@ -89,6 +102,33 @@ export function isInformationalReceipt(text) {
   // the opening text avoids suppressing a real request that merely mentions an
   // older receipt later in a long thread or newsletter.
   return RECEIPT_WORDS.test(value.slice(0, 320)) && !PAYMENT_ACTION.test(value);
+}
+
+function detectSubscription(text, amount) {
+  if (!SUBSCRIPTION_CONTEXT.test(text)) return null;
+  const opening = text.slice(0, 320);
+  if (TEST_TRANSACTION.test(opening) && RECEIPT_WORDS.test(opening)) return null;
+  const event = SUBSCRIPTION_EVENTS.find(({ pattern }) => pattern.test(text))
+    || (RECEIPT_WORDS.test(opening) ? {
+      kind: 'purchased', title: 'Subscription purchased or renewed', confidence: 0.9, priority: null,
+    } : null);
+  if (!event) return null;
+  const numeric = amount ? Number(amount[1].replace(',', '.')) : null;
+  return {
+    type: 'payment',
+    key: `subscription-${event.kind}`,
+    title: event.title,
+    confidence: event.confidence,
+    priority: event.priority,
+    amountMinor: Number.isFinite(numeric) ? Math.round(numeric * 100) : null,
+    currency: normaliseCurrency(amount?.[2]),
+    eventAt: null,
+    details: {
+      subscription: true,
+      subscriptionEvent: event.kind,
+      amount: amount?.[0]?.trim() || null,
+    },
+  };
 }
 
 function invoiceEvidenceNearby(text, evidencePattern, radius = 160) {

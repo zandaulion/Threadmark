@@ -432,11 +432,13 @@ export class ThreadmarkStore {
     const currentIban = detection.details?.iban || text.match(/\b[A-Z]{2}\d{2}[A-Z0-9]{11,30}\b/u)?.[0] || null;
     const previous = this.db.prepare(`${itemSelect()} WHERE g.id=? AND a.type='payment' ORDER BY a.created_at DESC LIMIT 1`).get(source.id);
     const previousDetails = previous ? safeJson(previous.details_json) : {};
-    if (currentIban && previousDetails.iban && currentIban !== previousDetails.iban) alerts.push('Bank details changed since the previous payment request');
-    if (previous && detection.amountMinor && previous.amount_minor === detection.amountMinor
-      && (!currentIban || !previousDetails.iban || currentIban === previousDetails.iban)
-      && Date.now() - new Date(previous.created_at).valueOf() < 14 * 86_400_000) alerts.push('Possible duplicate payment request');
-    if (previous && detection.amountMinor && previous.amount_minor && previous.amount_minor !== detection.amountMinor) alerts.push('Amount differs from the previous payment request');
+    if (!detection.details?.subscription) {
+      if (currentIban && previousDetails.iban && currentIban !== previousDetails.iban) alerts.push('Bank details changed since the previous payment request');
+      if (previous && detection.amountMinor && previous.amount_minor === detection.amountMinor
+        && (!currentIban || !previousDetails.iban || currentIban === previousDetails.iban)
+        && Date.now() - new Date(previous.created_at).valueOf() < 14 * 86_400_000) alerts.push('Possible duplicate payment request');
+      if (previous && detection.amountMinor && previous.amount_minor && previous.amount_minor !== detection.amountMinor) alerts.push('Amount differs from the previous payment request');
+    }
     if (/\b(password|pin|otp|one[- ]time code|cod(?:ul)? sms|parola|cvv|gift card|card cadou|crypto|bitcoin|remote access|anydesk|teamviewer|secret|confidential|nu spune)\b/iu.test(text)) {
       alerts.push('Unusual payment request—verify through another channel');
     }

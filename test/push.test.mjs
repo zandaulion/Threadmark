@@ -38,3 +38,11 @@ test('invoices have a specific notification title', () => {
   });
   assert.equal(payload.title, 'Invoice received');
 });
+
+test('subscription lifecycle events have a specific notification title', () => {
+  const payload = notificationPayload({
+    id: 'subscription:item', type: 'payment', title: 'Subscription renewed', priority: null,
+    source: { name: 'Inbox' }, details: { subscription: true, subscriptionEvent: 'renewed' },
+  });
+  assert.equal(payload.title, 'Subscription update');
+});

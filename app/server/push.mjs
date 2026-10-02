@@ -40,7 +40,7 @@ export class PushService {
 export function notificationPayload(item) {
   const urgent = Number(item.priority) >= 0.78;
   const warning = Array.isArray(item.details?.safetyAlerts) && item.details.safetyAlerts.length;
-  const baseTitle = item.details?.needsReview ? 'Photo needs review' : warning ? 'Payment warning' : item.details?.invoice ? 'Invoice received' : item.type === 'payment' ? 'Payment mentioned' : item.type === 'meeting' ? 'Meeting mentioned' : 'Reminder matched';
+  const baseTitle = item.details?.needsReview ? 'Photo needs review' : warning ? 'Payment warning' : item.details?.invoice ? 'Invoice received' : item.details?.subscription ? 'Subscription update' : item.type === 'payment' ? 'Payment mentioned' : item.type === 'meeting' ? 'Meeting mentioned' : 'Reminder matched';
   return {
     title: urgent ? `Urgent · ${baseTitle}` : baseTitle,
     body: `${item.source?.name || item.group.name}: ${item.title}`,

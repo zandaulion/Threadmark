@@ -50,6 +50,7 @@ The two connectors and app run as separate rootless Podman containers on a priva
 - Search for known groups and people, with phone-number lookup for contacts WhatsApp has not replayed to the linked device.
 - Import selected contacts through the browser's privacy-preserving Contact Picker when the device supports it.
 - Romanian and English invoice, payment and meeting detectors. Concrete invoice notices do not require an amount or IBAN; paid receipts and order confirmations are ignored unless they contain a new action to take.
+- Built-in subscription lifecycle monitoring for purchases, starts, renewals, re-subscriptions, price changes, expirations, cancellations and payment failures; clearly labeled test purchase receipts stay quiet.
 - Local custom rules with any/all phrase matching, category, chat scope, enable/disable controls, optional notifications and a sample-text tester.
 - Optional Jev semantic fallback for locally unmatched invoice, payment, meeting and reminder messages, plus Gmail meeting verification to suppress newsletter and marketing false positives.
 - User-defined semantic monitors with plain-language conditions, per-monitor thresholds, chat scope, notifications and a Jev sample tester.

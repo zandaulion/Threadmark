@@ -53,6 +53,30 @@ test('ignores paid receipts but keeps an explicit payment request', () => {
   assert.equal(unpaid[0]?.amountMinor, 3799);
 });
 
+test('detects real subscription lifecycle events but ignores test purchase receipts', () => {
+  const renewed = detectAttention({ text: 'Your annual subscription has been renewed. Receipt total: 49,99 RON.' });
+  const failed = detectAttention({ text: 'We could not process your subscription payment. Your card was declined.' });
+  const price = detectAttention({ text: 'Your subscription price will increase to 59,99 RON next month.' });
+  const expiring = detectAttention({ text: 'Your membership expires on 10.10.2026.' });
+  const cancelled = detectAttention({ text: 'Your subscription has been cancelled and will not renew.' });
+  const purchased = detectAttention({ text: 'Your order receipt\n\nAnnual subscription — 99,99 RON.' });
+  const testReceipt = detectAttention({ text: 'Test: Your Google Play Order Receipt\n\n15 minute subscription — 37,99 RON.' });
+
+  assert.equal(renewed[0]?.details.subscriptionEvent, 'renewed');
+  assert.equal(renewed[0]?.amountMinor, 4999);
+  assert.equal(failed[0]?.details.subscriptionEvent, 'payment-failed');
+  assert.equal(failed[0]?.priority, 0.95);
+  assert.equal(price[0]?.details.subscriptionEvent, 'price-change');
+  assert.equal(expiring[0]?.details.subscriptionEvent, 'expiring');
+  assert.equal(cancelled[0]?.details.subscriptionEvent, 'cancelled');
+  assert.equal(purchased[0]?.details.subscriptionEvent, 'purchased');
+  assert.deepEqual(testReceipt, []);
+});
+
+test('does not treat subscription marketing as a lifecycle event', () => {
+  assert.deepEqual(detectAttention({ text: 'Subscribe now and save 20% on a new membership plan.' }), []);
+});
+
 test('detects a meeting with date and time', () => {
   const items = detectAttention({ text: 'Ședință pe 05.10.2026 la ora 18:30, pe Teams.', sentAt: '2026-10-01T10:00:00Z' });
   assert.equal(items.length, 1);
