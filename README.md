@@ -232,4 +232,4 @@ For personal matching needs, no code change is required: open **Rules** in the P
 
 ## License
 
-GPL-3.0-only, matching the vendored `pwa-kit` update mechanism.
+Threadmark is free software licensed under the [GNU General Public License v3.0 only](LICENSE), SPDX identifier `GPL-3.0-only`. This matches the license of the vendored `pwa-kit` update mechanism.
