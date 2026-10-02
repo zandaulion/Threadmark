@@ -1,0 +1,25 @@
+[Unit]
+Description=Threadmark WhatsApp linked-device bridge
+After=network-online.target threadmark-app.service
+Wants=network-online.target threadmark-app.service
+
+[Container]
+Image=localhost/threadmark-bridge:latest
+ContainerName=threadmark-bridge
+Network=threadmark.network
+Volume=%h/.local/share/threadmark/bridge:/data:Z
+EnvironmentFile=%h/.config/threadmark/server.env
+Environment=HOST=0.0.0.0
+Environment=PORT=4392
+Environment=DATA_DIR=/data
+Environment=APP_INTERNAL_URL=http://threadmark-app:4391
+NoNewPrivileges=true
+DropCapability=all
+
+[Service]
+ExecStartPre=/usr/bin/mkdir -p %h/.local/share/threadmark/bridge
+Restart=always
+RestartSec=8
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#111827">
+  <meta name="description" content="A private attention inbox for selected WhatsApp groups and people.">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/icons/icon.svg">
+  <title>Threadmark</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <section class="gate" id="gate" hidden>
+    <div class="gate-brand"><span class="mark" aria-hidden="true">T</span><span>Threadmark</span></div>
+    <form class="gate-card" id="invite-form">
+      <p class="eyebrow">Private access</p>
+      <h1>Catch what matters.</h1>
+      <p class="lede">Enter the invitation created from your private PWA console. This registers only this browser.</p>
+      <label for="invite-code">Invitation code</label>
+      <input id="invite-code" name="code" autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" placeholder="ABCDE-23456" required>
+      <label for="device-label">Device name</label>
+      <input id="device-label" name="label" autocomplete="off" maxlength="80" placeholder="My phone">
+      <p class="form-error" id="invite-error" role="alert"></p>
+      <button class="button primary wide" type="submit">Activate this device</button>
+      <p class="privacy-note">Your invitation becomes unusable after activation. Revoke this device at any time from the invite console.</p>
+    </form>
+  </section>
+
+  <div id="app" hidden>
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="Threadmark home"><span class="mark" aria-hidden="true">T</span><span>Threadmark</span></a>
+      <div class="header-actions">
+        <button class="connection-pill" id="connection-button" type="button" aria-haspopup="dialog">
+          <span class="status-dot" id="status-dot"></span><span id="connection-label">Checking WhatsApp</span>
+        </button>
+        <button class="icon-button" id="groups-button" type="button" aria-label="Choose monitored chats" title="Monitored chats">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        </button>
+        <button class="icon-button" id="rules-button" type="button" aria-label="Manage rules" title="Rules">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 12h2M10 12h10M4 17h7M15 17h5M14 5v4M6 10v4M11 15v4"/></svg>
+        </button>
+        <button class="icon-button" id="settings-button" type="button" aria-label="Open preferences" title="Preferences">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21h-4v-.1A1.7 1.7 0 0 0 8.6 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H3v-4h.1A1.7 1.7 0 0 0 4.6 8.6a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V3h4v.1A1.7 1.7 0 0 0 15.4 4.6a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.4 9c.16.37.38.7.68.96.3.25.68.4 1.08.4h.1v4h-.1c-.4 0-.78.14-1.08.4-.3.25-.52.58-.68.95Z"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <main class="shell">
+      <section class="main-column">
+        <div class="intro-row">
+          <div>
+            <p class="eyebrow" id="today-label">Today</p>
+            <h1>Your attention, distilled.</h1>
+            <p class="lede">Payments, meetings, and reminders from the chats you chose—nothing else.</p>
+          </div>
+          <button class="button alerts-button" id="alerts-button" type="button">Enable alerts</button>
+        </div>
+
+        <div class="summary-grid" aria-label="Open items summary">
+          <article class="summary-card accent">
+            <span class="summary-label">Needs attention</span>
+            <strong id="summary-open">0</strong>
+            <span class="summary-detail">open items</span>
+          </article>
+          <article class="summary-card">
+            <span class="summary-icon payment-icon" aria-hidden="true">RON</span>
+            <span class="summary-label">Payments</span>
+            <strong id="summary-payments">0</strong>
+          </article>
+          <article class="summary-card">
+            <span class="summary-icon meeting-icon" aria-hidden="true">◫</span>
+            <span class="summary-label">Meetings</span>
+            <strong id="summary-meetings">0</strong>
+          </article>
+        </div>
+
+        <div class="feed-heading">
+          <div class="tabs" role="tablist" aria-label="Attention item type">
+            <button class="tab active" type="button" role="tab" aria-selected="true" data-filter="all">All</button>
+            <button class="tab" type="button" role="tab" aria-selected="false" data-filter="payment">Payments</button>
+            <button class="tab" type="button" role="tab" aria-selected="false" data-filter="meeting">Meetings</button>
+            <button class="tab" type="button" role="tab" aria-selected="false" data-filter="reminder">Reminders</button>
+          </div>
+          <div class="feed-controls">
+            <div class="status-tabs" role="tablist" aria-label="Item status">
+              <button class="status-tab active" type="button" role="tab" aria-selected="true" data-status="open">Open</button>
+              <button class="status-tab" type="button" role="tab" aria-selected="false" data-status="snoozed">Snoozed</button>
+              <button class="status-tab" type="button" role="tab" aria-selected="false" data-status="done">Done</button>
+            </div>
+            <button class="text-button" id="refresh-button" type="button">Refresh</button>
+          </div>
+        </div>
+        <section class="feed" id="feed" aria-live="polite"></section>
+      </section>
+
+      <aside class="side-column">
+        <section class="side-card connection-card">
+          <div class="side-card-head"><p class="eyebrow">Live source</p><span class="mini-state" id="mini-state">Offline</span></div>
+          <h2>WhatsApp bridge</h2>
+          <p id="bridge-copy">Checking the linked-device connection.</p>
+          <button class="button dark wide" id="pair-button" type="button">Connect WhatsApp</button>
+        </section>
+        <section class="side-card">
+          <div class="side-card-head"><p class="eyebrow">Listening to</p><span class="group-count" id="group-count">0 groups · 0 people</span></div>
+          <div id="selected-groups" class="selected-groups"></div>
+          <button class="text-button align-left" id="edit-groups-button" type="button">Choose chats</button>
+        </section>
+        <section class="side-card quiet-card">
+          <p class="eyebrow">Privacy rule</p>
+          <p id="privacy-copy">Unselected chat content is discarded after local routing. Matching excerpts stay on this server only.</p>
+          <button class="text-button align-left" id="side-rules-button" type="button">Manage rules</button>
+          <button class="text-button align-left" id="side-settings-button" type="button">Privacy & reminders</button>
+        </section>
+      </aside>
+    </main>
+
+    <nav class="mobile-nav" aria-label="Primary">
+      <button class="mobile-nav-item active" type="button"><span>●</span>Inbox</button>
+      <button class="mobile-nav-item" id="mobile-groups-button" type="button"><span>◎</span>Chats</button>
+      <button class="mobile-nav-item" id="mobile-rules-button" type="button"><span>⌁</span>Rules</button>
+      <button class="mobile-nav-item" id="mobile-settings-button" type="button"><span>⚙</span>Settings</button>
+      <button class="mobile-nav-item" id="mobile-connect-button" type="button"><span>◇</span>Connect</button>
+    </nav>
+  </div>
+
+  <dialog id="groups-dialog" class="modal">
+    <form method="dialog" class="modal-shell">
+      <div class="modal-head">
+        <div><p class="eyebrow">Message scope</p><h2>Monitored chats</h2></div>
+        <button class="close-button" value="close" aria-label="Close">×</button>
+      </div>
+      <p class="modal-copy">Groups and people are off by default. Changes apply only to new messages.</p>
+      <div class="scope-tabs" role="tablist" aria-label="Chat type">
+        <button class="scope-tab active" type="button" role="tab" aria-selected="true" data-scope-tab="groups">Groups</button>
+        <button class="scope-tab" type="button" role="tab" aria-selected="false" data-scope-tab="contacts">People</button>
+      </div>
+      <div id="scope-search-form" class="scope-search" role="search">
+        <label class="visually-hidden" for="scope-search">Search monitored chats</label>
+        <span class="search-glyph" aria-hidden="true">⌕</span>
+        <input id="scope-search" type="search" autocomplete="off" placeholder="Search groups" aria-describedby="scope-search-note">
+        <button id="contact-lookup-button" class="lookup-button" type="button" hidden>Add number</button>
+      </div>
+      <div class="scope-search-meta">
+        <p class="scope-search-note" id="scope-search-note">Filter by group name.</p>
+        <button class="import-contacts-button" id="import-contacts-button" type="button" hidden>Import contacts</button>
+        <input id="contacts-file" type="file" accept=".vcf,text/vcard,text/x-vcard" multiple hidden>
+      </div>
+      <div id="groups-list" class="groups-list"></div>
+      <div id="contacts-list" class="groups-list" hidden></div>
+      <div class="modal-footer"><button class="button dark" value="close">Done</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="settings-dialog" class="modal settings-modal">
+    <form id="settings-form" class="modal-shell">
+      <div class="modal-head">
+        <div><p class="eyebrow">Workflow & privacy</p><h2>Preferences</h2></div>
+        <button class="close-button" id="settings-close" type="button" aria-label="Close">×</button>
+      </div>
+      <p class="modal-copy">Local features are enabled independently. Options that expand what Jev sees are off until you choose them.</p>
+      <section class="settings-section">
+        <h3>Reminders</h3>
+        <label class="rule-option"><input id="setting-digest" type="checkbox"><span><strong>Daily digest</strong><small>One notification summarizing unresolved items.</small></span></label>
+        <div class="settings-grid"><div><label for="setting-digest-time">Digest time</label><input id="setting-digest-time" type="time" value="19:00"></div><div><label for="setting-reply-delay">Reply reminder after</label><select id="setting-reply-delay"><option value="2">2 hours</option><option value="4">4 hours</option><option value="8">8 hours</option><option value="24">1 day</option><option value="48">2 days</option></select></div></div>
+      </section>
+      <section class="settings-section">
+        <h3>Local media</h3>
+        <label class="rule-option"><input id="setting-attachments" type="checkbox"><span><strong>Read attachments locally</strong><small>OCR images/PDFs and transcribe voice notes inside the Podman bridge. Media is deleted immediately after processing.</small></span></label>
+      </section>
+      <section class="settings-section privacy-settings">
+        <h3>Optional conversation context</h3>
+        <label class="rule-option"><input id="setting-context" type="checkbox"><span><strong>Detect changes and cancellations</strong><small>Keeps up to 48 hours of selected-chat text locally. Jev receives recent text with direction labels, but no chat identities.</small></span></label>
+        <label class="rule-option"><input id="setting-outgoing" type="checkbox"><span><strong>Detect whether I replied</strong><small>Processes your outgoing messages from selected chats locally. Outgoing text is included in the 48-hour context sent to Jev when needed.</small></span></label>
+      </section>
+      <p class="form-error" id="settings-error" role="alert"></p>
+      <button class="button primary wide" type="submit">Save preferences</button>
+    </form>
+  </dialog>
+
+  <dialog id="rules-dialog" class="modal rules-modal">
+    <div class="modal-shell">
+      <div class="modal-head">
+        <div><p class="eyebrow">Attention logic</p><h2>Rules</h2></div>
+        <button class="close-button" id="rules-close" type="button" aria-label="Close">×</button>
+      </div>
+      <p class="modal-copy">Create exact local rules or semantic Jev monitors for new messages from monitored chats.</p>
+      <details class="jev-card" id="jev-details">
+        <summary class="jev-card-summary">
+          <div><p class="eyebrow">Semantic fallback</p><h3>Jev detection</h3></div>
+          <span class="jev-card-state"><span class="mini-state" id="jev-state">Checking</span><span class="disclosure-chevron" aria-hidden="true">⌄</span></span>
+        </summary>
+        <div class="jev-card-body">
+          <p id="jev-copy">Checking the TypeSafe AI configuration.</p>
+          <div id="jev-test" hidden>
+            <label for="jev-test-text">Test Jev with sample text</label>
+            <textarea id="jev-test-text" rows="3" placeholder="Paste a representative message."></textarea>
+            <p class="jev-privacy">This sample is sent to TypeSafe AI for classification and is not saved by Threadmark.</p>
+            <div class="rule-test-row"><button class="button" id="test-jev-button" type="button">Test Jev</button><output id="jev-test-result" aria-live="polite"></output></div>
+          </div>
+        </div>
+      </details>
+      <div id="rules-list" class="rules-list"></div>
+      <button class="button dark wide" id="new-rule-button" type="button">New rule</button>
+
+      <form id="rule-form" class="rule-form" hidden>
+        <input id="rule-id" type="hidden">
+        <div class="rule-form-head"><h3 id="rule-form-title">New rule</h3><button class="text-button" id="cancel-rule-button" type="button">Cancel</button></div>
+        <label for="rule-name">Rule name</label>
+        <input id="rule-name" maxlength="80" placeholder="School deadline" required>
+        <div class="rule-grid">
+          <div><label for="rule-kind">Detection</label><select id="rule-kind"><option value="phrase">Phrase rule · local</option><option value="semantic">Semantic monitor · Jev</option></select></div>
+          <div><label for="rule-category">Category</label><select id="rule-category"><option value="reminder">Reminder</option><option value="payment">Payment</option><option value="meeting">Meeting</option></select></div>
+        </div>
+        <div id="phrase-rule-fields">
+          <label for="rule-match-mode">Match</label>
+          <select id="rule-match-mode"><option value="any">Any phrase</option><option value="all">All phrases</option></select>
+          <label for="rule-terms">Phrases, one per line</label>
+          <textarea id="rule-terms" rows="4" placeholder="deadline&#10;formular&#10;până vineri"></textarea>
+        </div>
+        <div id="semantic-rule-fields" hidden>
+          <label for="rule-condition">What should Jev notice?</label>
+          <textarea id="rule-condition" rows="3" maxlength="500" placeholder="Someone needs a decision or reply from me."></textarea>
+          <label for="rule-threshold">Match threshold</label>
+          <div class="threshold-field"><input id="rule-threshold" type="number" min="50" max="99" step="1" value="78" inputmode="numeric"><span>% probability</span></div>
+          <p class="semantic-privacy">Only otherwise-unmatched text from chats in this rule's scope is sent to TypeSafe AI. Chat identities are not sent.</p>
+        </div>
+        <label for="rule-scope">Applies to</label>
+        <select id="rule-scope"><option value="all">All monitored chats</option><option value="sources">Specific monitored chats</option></select>
+        <div id="rule-sources" class="rule-sources" hidden></div>
+        <label class="rule-option"><input id="rule-notify" type="checkbox" checked><span>Send a notification when this rule matches</span></label>
+        <div class="rule-test">
+          <label for="rule-test-text">Test with sample text</label>
+          <textarea id="rule-test-text" rows="3" placeholder="Paste a sample message here. It is tested locally on this server and is not saved."></textarea>
+          <p class="semantic-privacy" id="rule-test-privacy" hidden>This sample is sent to TypeSafe AI and is not saved by Threadmark.</p>
+          <div class="rule-test-row"><button class="button" id="test-rule-button" type="button">Test rule</button><output id="rule-test-result" aria-live="polite"></output></div>
+        </div>
+        <p class="form-error" id="rule-error" role="alert"></p>
+        <button class="button primary wide" type="submit">Save rule</button>
+      </form>
+    </div>
+  </dialog>
+
+  <dialog id="pair-dialog" class="modal">
+    <div class="modal-shell pairing-shell">
+      <div class="modal-head">
+        <div><p class="eyebrow">Linked device</p><h2>Connect WhatsApp</h2></div>
+        <button class="close-button" id="pair-close" type="button" aria-label="Close">×</button>
+      </div>
+      <div id="pair-connected" hidden>
+        <div class="connected-seal">✓</div>
+        <h3>Connected</h3>
+        <p id="connected-account">Threadmark is receiving new messages.</p>
+      </div>
+      <div id="pair-steps">
+        <div class="pair-tabs" role="tablist" aria-label="Pairing method">
+          <button class="pair-tab active" data-pair-tab="qr" type="button">QR code</button>
+          <button class="pair-tab" data-pair-tab="phone" type="button">Phone number</button>
+        </div>
+        <section id="pair-qr" class="pair-panel">
+          <div class="qr-frame"><img id="qr-image" alt="WhatsApp linked-device QR code"></div>
+          <ol class="steps"><li>Open WhatsApp on your phone.</li><li>Go to Linked devices.</li><li>Scan this code.</li></ol>
+        </section>
+        <section id="pair-phone" class="pair-panel" hidden>
+          <form id="pair-code-form">
+            <label for="phone-number">WhatsApp number, including country code</label>
+            <input id="phone-number" inputmode="tel" autocomplete="tel" placeholder="15550100001" required>
+            <button class="button dark wide" type="submit">Get pairing code</button>
+          </form>
+          <output class="pairing-code" id="pairing-code" aria-live="polite"></output>
+          <p class="modal-copy">In WhatsApp, choose Linked devices, then “Link with phone number” and enter this code.</p>
+        </section>
+      </div>
+      <p class="warning-note">This uses an unofficial linked-device connector. Keep Threadmark read-only and disconnect it from WhatsApp if anything looks unexpected.</p>
+    </div>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

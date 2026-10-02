@@ -1,0 +1,26 @@
+[Unit]
+Description=Threadmark PWA and API
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=localhost/threadmark-app:latest
+ContainerName=threadmark-app
+Network=threadmark.network
+PublishPort=127.0.0.1:4391:4391
+Volume=%h/.local/share/threadmark/app:/data:Z
+EnvironmentFile=%h/.config/threadmark/server.env
+Environment=HOST=0.0.0.0
+Environment=PORT=4391
+Environment=DATA_DIR=/data
+Environment=BRIDGE_CONTROL_URL=http://threadmark-bridge:4392
+NoNewPrivileges=true
+DropCapability=all
+
+[Service]
+ExecStartPre=/usr/bin/mkdir -p %h/.local/share/threadmark/app
+Restart=always
+RestartSec=8
+
+[Install]
+WantedBy=default.target

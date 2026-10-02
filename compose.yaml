@@ -1,0 +1,43 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: deploy/Containerfile.app
+    image: localhost/threadmark-app:latest
+    container_name: threadmark-app
+    env_file: ${THREADMARK_ENV_FILE:-./deploy/threadmark.env}
+    environment:
+      HOST: 0.0.0.0
+      PORT: 4391
+      DATA_DIR: /data
+      BRIDGE_CONTROL_URL: http://bridge:4392
+    ports:
+      - "127.0.0.1:4391:4391"
+    volumes:
+      - ${THREADMARK_DATA_DIR:-./data}/app:/data:Z
+    networks: [threadmark]
+    security_opt: [no-new-privileges]
+    cap_drop: [ALL]
+    restart: unless-stopped
+  bridge:
+    build:
+      context: .
+      dockerfile: deploy/Containerfile.bridge
+    image: localhost/threadmark-bridge:latest
+    container_name: threadmark-bridge
+    env_file: ${THREADMARK_ENV_FILE:-./deploy/threadmark.env}
+    environment:
+      HOST: 0.0.0.0
+      PORT: 4392
+      DATA_DIR: /data
+      APP_INTERNAL_URL: http://app:4391
+    volumes:
+      - ${THREADMARK_DATA_DIR:-./data}/bridge:/data:Z
+    networks: [threadmark]
+    security_opt: [no-new-privileges]
+    cap_drop: [ALL]
+    restart: unless-stopped
+    depends_on: [app]
+networks:
+  threadmark:
+    internal: false

@@ -1,0 +1,30 @@
+{
+  "generatedAt": "2026-10-02T07:06:12.431Z",
+  "syntheticData": true,
+  "captures": [
+    {
+      "file": "docs/images/portfolio/threadmark-desktop-1440x1000.png",
+      "width": 1440,
+      "height": 1000,
+      "description": "Desktop attention inbox with synthetic alerts."
+    },
+    {
+      "file": "docs/images/portfolio/threadmark-tablet-rules-834x1112.png",
+      "width": 834,
+      "height": 1112,
+      "description": "Tablet rules view with local and Jev monitors."
+    },
+    {
+      "file": "docs/images/portfolio/threadmark-mobile-390x844.png",
+      "width": 390,
+      "height": 844,
+      "description": "Mobile attention inbox with synthetic messages."
+    },
+    {
+      "file": "docs/images/portfolio/threadmark-mobile-rules-390x844.png",
+      "width": 390,
+      "height": 844,
+      "description": "Mobile rules view with the Jev section collapsed."
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+[Unit]
+Description=Private network for Threadmark
+
+[Network]
+NetworkName=threadmark
+
+[Install]
+WantedBy=default.target

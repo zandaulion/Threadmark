@@ -1,0 +1,16 @@
+{
+  "name": "threadmark",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "start": "node app/server/index.mjs",
+    "start:bridge": "node bridge/index.mjs",
+    "screenshots": "node scripts/portfolio-screenshots.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.63.0"
+  },
+  "license": "GPL-3.0-only"
+}

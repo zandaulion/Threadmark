@@ -1,0 +1,22 @@
+FROM docker.io/library/alpine:3.22 AS whisper-build
+RUN apk add --no-cache build-base cmake curl git
+RUN git clone --depth 1 --branch v1.9.4 https://github.com/ggml-org/whisper.cpp.git /src/whisper.cpp \
+  && cmake -S /src/whisper.cpp -B /src/whisper.cpp/build -DCMAKE_BUILD_TYPE=Release -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_EXAMPLES=ON \
+  && cmake --build /src/whisper.cpp/build --config Release -j2 \
+  && cmake --install /src/whisper.cpp/build --prefix /opt/whisper \
+  && mkdir -p /opt/whisper/models \
+  && /src/whisper.cpp/models/download-ggml-model.sh tiny /opt/whisper/models
+
+FROM docker.io/library/node:24-alpine
+ENV NODE_ENV=production
+ENV LD_LIBRARY_PATH=/opt/whisper/lib
+WORKDIR /srv/bridge
+RUN apk add --no-cache ffmpeg libgomp poppler-utils tesseract-ocr tesseract-ocr-data-eng tesseract-ocr-data-ron
+COPY --from=whisper-build /opt/whisper /opt/whisper
+COPY bridge/package.json bridge/package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts
+COPY bridge/*.mjs ./
+VOLUME ["/data"]
+ENV DATA_DIR=/data HOST=0.0.0.0 PORT=4392 APP_INTERNAL_URL=http://threadmark-app:4391
+EXPOSE 4392
+CMD ["node", "index.mjs"]

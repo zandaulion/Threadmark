@@ -1,0 +1,20 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Updating Threadmark…</title>
+<style>
+  body { display:grid; place-items:center; min-height:100vh; margin:0; font-family:system-ui,sans-serif; background:#111827; color:#f7f3ea; text-align:center; }
+  .spinner { width:34px; height:34px; margin:0 auto 16px; border:3px solid #ffffff33; border-top-color:#ff6b4a; border-radius:50%; animation:spin .8s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  @media (prefers-reduced-motion:reduce) { .spinner { animation-duration:3s; } }
+</style>
+<div><div class="spinner"></div><h2>Updating Threadmark…</h2><p>Clearing the cached app shell.</p></div>
+<script>
+(async () => {
+  try {
+    const keys = await caches.keys(); await Promise.all(keys.map((key) => caches.delete(key)));
+    const registrations = await navigator.serviceWorker.getRegistrations(); await Promise.all(registrations.map((registration) => registration.unregister()));
+  } catch (error) { console.warn('could not fully clear:', error); }
+  sessionStorage.setItem('pwa-kit:updated', '1'); location.replace('/');
+})();
+</script>
