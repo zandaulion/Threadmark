@@ -1,8 +1,8 @@
 # Threadmark user guide
 
-Threadmark turns selected WhatsApp conversations into a private attention inbox. It watches only new messages from chats you enable and surfaces payments, meetings, deadlines, requests and other topics you define.
+Threadmark turns selected WhatsApp conversations and Gmail sources into a private attention inbox. It watches only new messages from sources you enable and surfaces payments, meetings, deadlines, requests and other topics you define.
 
-The WhatsApp connection is read-only by design: Threadmark does not send replies, mark chats as read, publish presence or import chat history.
+Both connections are read-only by design: Threadmark does not send replies or email, change read state, delete content, publish presence or import history.
 
 ## First-time setup
 
@@ -10,25 +10,28 @@ The WhatsApp connection is read-only by design: Threadmark does not send replies
 2. Open the invitation in the browser you want to register.
 3. Give the device a recognizable name and choose **Activate this device**.
 4. Open **Connect**, then link WhatsApp using a QR code or phone-number pairing code.
-5. Open **Chats** and enable only the groups and people Threadmark should monitor.
-6. If wanted, open **Settings** and enable attachment reading, context-aware updates, reply monitoring or the daily digest.
-7. Enable browser notifications from the **Enable alerts** button.
+5. Optionally connect personal Gmail. The administrator must configure Google OAuth first.
+6. Open **Chats** and enable only the groups, people, Gmail labels or Gmail senders Threadmark should monitor.
+7. If wanted, open **Settings** and enable attachment reading, context-aware updates, reply monitoring or the daily digest.
+8. Enable browser notifications from the **Enable alerts** button.
 
 Install the PWA from the browser menu for a full-screen experience and more reliable notification handling. HTTPS is required outside localhost.
 
-## Choose monitored chats
+## Choose monitored sources
 
-Groups and people are off by default. Selecting a chat affects only messages received afterward; Threadmark does not scan older WhatsApp history.
+Every source is off by default. Selecting one affects only messages received afterward; Threadmark does not scan older WhatsApp or Gmail history.
 
 In **Chats**:
 
-- Switch between **Groups** and **People**.
+- Switch between **Groups**, **People**, **Gmail labels** and **Senders**.
 - Search by name or phone number.
 - Enable or disable any known source with its switch.
 - Enter a complete international phone number to look up a person not yet shown.
 - Use **Import from phone** where Contact Picker is supported, or import a `.vcf` file elsewhere.
 
 Contact import sends only the selected phone numbers to the local WhatsApp bridge for existence lookup. Imported contacts remain disabled until you turn them on.
+
+Gmail labels appear after connection. Senders are discovered from the headers of new mail and remain disabled until selected. Full bodies are fetched only after a label or sender matches; email attachments are not downloaded. A detected email card includes **Open in Gmail** under **Actions**.
 
 ## Understand the inbox
 
@@ -132,6 +135,7 @@ When either is enabled, a rolling local context buffer is retained for at most 4
 - Leave Jev, context, replies and attachments disabled unless their benefit justifies the wider processing boundary.
 - Revoke lost or unused browsers from the private invitation console.
 - Keep the server, its backups and WhatsApp session volume private.
+- Treat the Gmail connector volume and protected environment file as mailbox credentials.
 - Verify any payment warning independently before transferring money.
 
 See [Privacy and security](PRIVACY.md) for the full data-flow explanation.
@@ -143,6 +147,9 @@ Wait for WhatsApp metadata to synchronize, receive a new message from that sourc
 
 **A newly selected chat has no old items**
 This is expected. Selection applies only to new messages and history is not scraped.
+
+**Gmail says it needs attention**
+Open **Connect** and reconnect. If this repeats after seven days, ask the administrator to move the personal OAuth consent screen out of Testing mode.
 
 **A custom rule did not match**
 Confirm it is enabled, its scope includes the source and the message arrived after the rule was saved. Test the exact wording. For phrase rules, check the any/all setting; for semantic rules, lower the threshold carefully.

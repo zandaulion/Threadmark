@@ -104,6 +104,12 @@ export function createThreadmarkServer(options = {}) {
           broadcast('contacts', contacts);
           return json(res, 200, { accepted: contacts.length });
         }
+        if (pathname === '/internal/gmail/sources' && req.method === 'POST') {
+          const body = await readJson(req, 1_000_000);
+          const sources = store.upsertGmailSources(Array.isArray(body.sources) ? body.sources : []);
+          broadcast('gmail-sources', sources);
+          return json(res, 200, { accepted: sources.length });
+        }
         if (pathname === '/internal/events' && req.method === 'POST') {
           const body = await readJson(req, 128_000);
           const selection = store.isSelectedMessage(body);
@@ -174,6 +180,13 @@ export function createThreadmarkServer(options = {}) {
         return json(res, 404, { error: 'not_found' });
       }
 
+      // Google returns from another origin, so SameSite=Strict deliberately omits
+      // the device cookie. The connector's single-use, expiring OAuth state value
+      // authenticates this one callback; all other Gmail endpoints require a device.
+      if (pathname === '/api/gmail/oauth/callback' && req.method === 'GET') {
+        return handleGmailCallback(res, config, url);
+      }
+
       if (pathname.startsWith('/api/')) {
         const device = auth.deviceForToken(tokenFromCookie(req.headers.cookie));
         if (!device) return json(res, 401, { error: 'not_registered' });
@@ -197,6 +210,7 @@ export function createThreadmarkServer(options = {}) {
         }
         if (pathname === '/api/groups' && req.method === 'GET') return json(res, 200, { groups: store.listGroups() });
         if (pathname === '/api/contacts' && req.method === 'GET') return json(res, 200, { contacts: store.listContacts() });
+        if (pathname === '/api/gmail/sources' && req.method === 'GET') return json(res, 200, { sources: store.listGmailSources() });
         if (pathname === '/api/contacts/lookup' && req.method === 'POST') {
           const body = await readJson(req);
           const digits = String(body.phoneNumber || '').replace(/\D/g, '');
@@ -273,6 +287,14 @@ export function createThreadmarkServer(options = {}) {
           if (changed) broadcast('contacts', store.listContacts());
           return json(res, changed ? 200 : 404, changed ? { ok: true } : { error: 'not_found' });
         }
+        const gmailSelection = pathname.match(/^\/api\/gmail\/sources\/(.+)\/selection$/u);
+        if (gmailSelection && req.method === 'POST') {
+          const body = await readJson(req);
+          const id = decodeURIComponent(gmailSelection[1]);
+          const changed = store.selectGmailSource(id, Boolean(body.selected));
+          if (changed) broadcast('gmail-sources', store.listGmailSources());
+          return json(res, changed ? 200 : 404, changed ? { ok: true } : { error: 'not_found' });
+        }
         const itemStatus = pathname.match(/^\/api\/items\/(.+)\/status$/u);
         if (itemStatus && req.method === 'POST') {
           const body = await readJson(req);
@@ -327,6 +349,16 @@ export function createThreadmarkServer(options = {}) {
         }
         if (pathname === '/api/whatsapp/qr.svg' && req.method === 'GET') {
           return proxyAsset(res, `${config.bridgeControlUrl}/qr.svg`, config.bridgeToken, 'image/svg+xml');
+        }
+        if (pathname === '/api/gmail/status' && req.method === 'GET') {
+          return proxyJson(res, `${config.gmailControlUrl}/status`, 'GET', null, config.bridgeToken,
+            { configured: false, connection: 'not_configured', account: null, degraded: true });
+        }
+        if (pathname === '/api/gmail/connect' && req.method === 'POST') {
+          return proxyJson(res, `${config.gmailControlUrl}/oauth/start`, 'POST', {}, config.bridgeToken);
+        }
+        if (pathname === '/api/gmail/disconnect' && req.method === 'POST') {
+          return proxyJson(res, `${config.gmailControlUrl}/disconnect`, 'POST', {}, config.bridgeToken);
         }
         return json(res, 404, { error: 'not_found' });
       }
@@ -384,6 +416,38 @@ async function proxyJson(res, target, method, body, token, fallback = null, onSu
     if (fallback) return json(res, 200, { ...fallback, degraded: true });
     return json(res, 503, { error: 'bridge_unavailable' });
   }
+}
+
+async function handleGmailCallback(res, config, url) {
+  const destination = new URL(config.publicBaseUrl || '/','http://local.invalid');
+  destination.searchParams.set('gmail', 'error');
+  if (url.searchParams.get('error')) {
+    destination.searchParams.set('reason', url.searchParams.get('error'));
+    return redirect(res, publicLocation(destination, config));
+  }
+  try {
+    const response = await fetch(`${config.gmailControlUrl}/oauth/callback`, {
+      method: 'POST',
+      headers: { 'x-bridge-token': config.bridgeToken, 'content-type': 'application/json' },
+      body: JSON.stringify({ code: url.searchParams.get('code'), state: url.searchParams.get('state') }),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) throw new Error('oauth_failed');
+    destination.searchParams.set('gmail', 'connected');
+    destination.searchParams.delete('reason');
+  } catch {
+    destination.searchParams.set('reason', 'oauth_failed');
+  }
+  return redirect(res, publicLocation(destination, config));
+}
+
+function publicLocation(url, config) {
+  return config.publicBaseUrl ? url.toString() : `/${url.search}`;
+}
+
+function redirect(res, location) {
+  res.writeHead(303, { location, 'cache-control': 'no-store' });
+  res.end();
 }
 
 async function proxyAsset(res, target, token, contentType) {

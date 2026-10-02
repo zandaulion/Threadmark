@@ -16,6 +16,7 @@ export function loadConfig(overrides = {}) {
     adminToken: process.env.ADMIN_TOKEN || '',
     bridgeToken: process.env.BRIDGE_TOKEN || '',
     bridgeControlUrl: (process.env.BRIDGE_CONTROL_URL || 'http://127.0.0.1:4392').replace(/\/+$/, ''),
+    gmailControlUrl: (process.env.GMAIL_CONTROL_URL || 'http://127.0.0.1:4393').replace(/\/+$/, ''),
     vapidPublicKey: process.env.VAPID_PUBLIC_KEY || '',
     vapidPrivateKey: process.env.VAPID_PRIVATE_KEY || '',
     vapidSubject: process.env.VAPID_SUBJECT || 'mailto:admin@example.invalid',

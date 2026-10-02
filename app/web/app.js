@@ -7,13 +7,15 @@ const state = {
   items: [],
   groups: [],
   contacts: [],
+  gmailSources: [],
   rules: [],
-  summary: { open: 0, payments: 0, meetings: 0, reminders: 0, groups: 0, contacts: 0 },
+  summary: { open: 0, payments: 0, meetings: 0, reminders: 0, groups: 0, contacts: 0, gmail: 0 },
   filter: 'all',
   status: 'open',
   scopeMode: 'groups',
   scopeQuery: '',
   bridge: { connection: 'disconnected' },
+  gmail: { configured: false, connection: 'not_configured', account: null },
   detection: { enabled: false, provider: 'TypeSafe AI', model: 'jev-latest', threshold: 0.78 },
   settings: { contextAware: false, outgoingMonitoring: false, attachmentProcessing: false, dailyDigest: false, digestTime: '19:00', replyDelayHours: 8 },
   busy: false,
@@ -58,6 +60,7 @@ async function boot() {
     state.device = session.device;
     showApp();
     await refreshAll();
+    finishGmailRedirect();
     await refreshAlertStatus();
     connectStream();
     registerModelTools();
@@ -81,14 +84,26 @@ function showApp() {
   history.replaceState(null, '', clean.pathname + clean.search + clean.hash);
 }
 
+function finishGmailRedirect() {
+  const current = new URL(location.href);
+  const result = current.searchParams.get('gmail');
+  if (!result) return;
+  showToast(result === 'connected' ? 'Gmail connected. Choose labels or senders to monitor.' : 'Gmail could not be connected. Check the server and Google OAuth configuration.');
+  current.searchParams.delete('gmail');
+  current.searchParams.delete('reason');
+  history.replaceState(null, '', current.pathname + current.search + current.hash);
+}
+
 async function refreshAll() {
-  const [summary, feedResult, groups, contacts, rules, bridge, detection, settings] = await Promise.all([
+  const [summary, feedResult, groups, contacts, gmailSources, rules, bridge, gmail, detection, settings] = await Promise.all([
     api('/api/summary'),
     api(`/api/feed?type=${encodeURIComponent(state.filter)}&status=${encodeURIComponent(state.status)}`),
     api('/api/groups'),
     api('/api/contacts'),
+    api('/api/gmail/sources'),
     api('/api/rules'),
     api('/api/whatsapp/status'),
+    api('/api/gmail/status'),
     api('/api/detection/status'),
     api('/api/settings'),
   ]);
@@ -96,8 +111,10 @@ async function refreshAll() {
   state.items = feedResult.items;
   state.groups = groups.groups;
   state.contacts = contacts.contacts;
+  state.gmailSources = gmailSources.sources;
   state.rules = rules.rules;
   state.bridge = bridge;
+  state.gmail = gmail;
   state.detection = detection;
   state.settings = settings;
   render();
@@ -150,7 +167,7 @@ function renderSettings() {
 function renderRules() {
   $('#rules-list').innerHTML = state.rules.length
     ? state.rules.map((rule) => `<article class="rule-card ${rule.enabled ? '' : 'disabled'}" data-rule-id="${escapeHtml(rule.id)}">
-        <div><h3>${escapeHtml(rule.name)}</h3><div class="rule-meta"><span class="rule-chip ${rule.kind === 'semantic' ? 'semantic' : ''}">${rule.kind === 'semantic' ? 'Jev' : 'Local'}</span><span class="rule-chip">${escapeHtml(categoryLabel(rule.category))}</span>${ruleDescription(rule)}<span>·</span><span>${rule.scope === 'all' ? 'All monitored chats' : `${rule.sourceIds.length} selected chats`}</span>${rule.notify ? '<span>· Alerts</span>' : ''}</div></div>
+        <div><h3>${escapeHtml(rule.name)}</h3><div class="rule-meta"><span class="rule-chip ${rule.kind === 'semantic' ? 'semantic' : ''}">${rule.kind === 'semantic' ? 'Jev' : 'Local'}</span><span class="rule-chip">${escapeHtml(categoryLabel(rule.category))}</span>${ruleDescription(rule)}<span>·</span><span>${rule.scope === 'all' ? 'All monitored sources' : `${rule.sourceIds.length} selected sources`}</span>${rule.notify ? '<span>· Alerts</span>' : ''}</div></div>
         <div class="rule-actions"><span class="switch"><input type="checkbox" data-rule-enabled="${escapeHtml(rule.id)}" ${rule.enabled ? 'checked' : ''} aria-label="Enable ${escapeHtml(rule.name)}"><span class="switch-ui"></span></span><button class="rule-action" type="button" data-rule-edit="${escapeHtml(rule.id)}">Edit</button><button class="rule-action" type="button" data-rule-delete="${escapeHtml(rule.id)}">Delete</button></div>
       </article>`).join('')
     : '<div class="empty-state compact"><p>No custom rules yet. Built-in payment and meeting detection is still active.</p></div>';
@@ -159,25 +176,32 @@ function renderRules() {
 function renderSources() {
   const selectedGroups = state.groups.filter((group) => group.selected);
   const selectedContacts = state.contacts.filter((contact) => contact.selected);
+  const selectedGmail = state.gmailSources.filter((source) => source.selected);
   const selected = [
     ...selectedGroups.map((source) => ({ ...source, kind: 'Group' })),
     ...selectedContacts.map((source) => ({ ...source, kind: 'Person' })),
+    ...selectedGmail.map((source) => ({ ...source, kind: source.kind === 'gmail_label' ? 'Gmail label' : 'Gmail sender' })),
   ];
   const groupLabel = `${selectedGroups.length} ${selectedGroups.length === 1 ? 'group' : 'groups'}`;
   const peopleLabel = `${selectedContacts.length} ${selectedContacts.length === 1 ? 'person' : 'people'}`;
-  $('#group-count').textContent = `${groupLabel} · ${peopleLabel}`;
+  const gmailLabel = `${selectedGmail.length} Gmail`;
+  $('#group-count').textContent = `${groupLabel} · ${peopleLabel} · ${gmailLabel}`;
   $('#selected-groups').innerHTML = selected.length
     ? selected.slice(0, 6).map((source) => `<div class="selected-group"><span>${escapeHtml(source.name)}</span><small>${source.kind}</small></div>`).join('')
-    : '<p>No chats selected yet.</p>';
+    : '<p>No sources selected yet.</p>';
   const query = normaliseSearch(state.scopeQuery);
   const visibleGroups = state.groups.filter((group) => matchesSearch(group, query));
   const visibleContacts = state.contacts.filter((contact) => matchesSearch(contact, query));
+  const visibleGmailLabels = state.gmailSources.filter((source) => source.kind === 'gmail_label' && matchesSearch(source, query));
+  const visibleGmailSenders = state.gmailSources.filter((source) => source.kind === 'gmail_sender' && matchesSearch(source, query));
   $('#groups-list').innerHTML = visibleGroups.length
     ? visibleGroups.map((group) => `<label class="group-row"><span><strong>${escapeHtml(group.name)}</strong><span>${Number(group.participant_count || 0)} participants</span></span><span class="switch"><input type="checkbox" data-group-id="${escapeHtml(group.id)}" ${group.selected ? 'checked' : ''}><span class="switch-ui"></span></span></label>`).join('')
     : `<div class="empty-state compact"><p>${query ? 'No groups match your search.' : 'Groups will appear after WhatsApp connects.'}</p></div>`;
   $('#contacts-list').innerHTML = visibleContacts.length
     ? visibleContacts.map((contact) => `<label class="group-row"><span><strong>${escapeHtml(contact.name)}</strong><span>${escapeHtml(contactNumber(contact.id))}</span></span><span class="switch"><input type="checkbox" data-contact-id="${escapeHtml(contact.id)}" ${contact.selected ? 'checked' : ''}><span class="switch-ui"></span></span></label>`).join('')
     : `<div class="empty-state compact"><p>${query ? 'No people match your search.' : 'People appear when WhatsApp shares chat metadata or when they message you.'}</p></div>`;
+  $('#gmail-labels-list').innerHTML = gmailSourceRows(visibleGmailLabels, query, 'Connect Gmail to load mailbox labels.');
+  $('#gmail-senders-list').innerHTML = gmailSourceRows(visibleGmailSenders, query, 'Senders appear after new email arrives. Message content is not retained unless the sender is enabled and a detection matches.');
   const digits = state.scopeQuery.replace(/\D/g, '');
   const exactPhone = state.contacts.some((contact) => contact.id.split('@')[0].replace(/\D/g, '') === digits);
   const canLookup = state.scopeMode === 'contacts' && digits.length >= 8 && digits.length <= 15 && !exactPhone;
@@ -185,24 +209,46 @@ function renderSources() {
   $('#contact-lookup-button').hidden = !canLookup;
   $('#import-contacts-button').hidden = state.scopeMode !== 'contacts';
   $('#import-contacts-button').textContent = canPickContacts ? 'Import from phone' : 'Import .vcf';
-  $('#scope-search').placeholder = state.scopeMode === 'contacts' ? 'Search people or enter a phone number' : 'Search groups';
+  $('#scope-search').placeholder = state.scopeMode === 'contacts' ? 'Search people or enter a phone number'
+    : state.scopeMode.startsWith('gmail_') ? 'Search Gmail sources' : 'Search groups';
   $('#scope-search-note').textContent = state.scopeMode === 'contacts'
     ? canLookup ? `Add +${digits} from WhatsApp. It will remain off until you enable it.` : `${visibleContacts.length} of ${state.contacts.length} people shown. ${canPickContacts ? 'Import selected phone contacts' : 'Import a .vcf contacts file'} or enter a full international number.`
-    : `${visibleGroups.length} of ${state.groups.length} groups shown.`;
+    : state.scopeMode === 'gmail_labels' ? `${visibleGmailLabels.length} of ${state.gmailSources.filter((source) => source.kind === 'gmail_label').length} Gmail labels shown.`
+      : state.scopeMode === 'gmail_senders' ? `${visibleGmailSenders.length} of ${state.gmailSources.filter((source) => source.kind === 'gmail_sender').length} Gmail senders shown.`
+        : `${visibleGroups.length} of ${state.groups.length} groups shown.`;
+}
+
+function gmailSourceRows(sources, query, emptyCopy) {
+  return sources.length
+    ? sources.map((source) => `<label class="group-row"><span><strong>${escapeHtml(source.name)}</strong><span>${source.kind === 'gmail_label' ? 'Gmail label' : 'Email sender'}</span></span><span class="switch"><input type="checkbox" data-gmail-source-id="${escapeHtml(source.id)}" ${source.selected ? 'checked' : ''}><span class="switch-ui"></span></span></label>`).join('')
+    : `<div class="empty-state compact"><p>${query ? 'No Gmail sources match your search.' : emptyCopy}</p></div>`;
 }
 
 function renderBridge() {
   const connected = state.bridge.connection === 'connected';
+  const gmailConnected = state.gmail.connection === 'connected';
   const pairing = state.bridge.connection === 'pairing';
-  const label = connected ? 'WhatsApp connected' : pairing ? 'Ready to pair' : state.bridge.connection === 'connecting' ? 'Connecting' : 'WhatsApp offline';
+  const connectedCount = Number(connected) + Number(gmailConnected);
+  const label = connectedCount === 2 ? 'WhatsApp + Gmail' : connected ? 'WhatsApp connected' : gmailConnected ? 'Gmail connected' : pairing ? 'Ready to pair' : state.bridge.connection === 'connecting' ? 'Connecting' : 'Sources offline';
   $('#connection-label').textContent = label;
-  $('#status-dot').className = `status-dot ${connected ? 'connected' : pairing ? 'pairing' : ''}`;
-  $('#mini-state').textContent = connected ? 'Live' : pairing ? 'Pairing' : 'Offline';
+  $('#status-dot').className = `status-dot ${connectedCount ? 'connected' : pairing ? 'pairing' : ''}`;
+  $('#mini-state').textContent = connectedCount ? `${connectedCount} live` : pairing ? 'Pairing' : 'Offline';
+  $('#whatsapp-dialog-state').textContent = connected ? 'Connected' : pairing ? 'Pairing' : 'Offline';
   $('#bridge-copy').textContent = connected
     ? 'New messages from selected groups and people are being checked in real time.'
     : pairing ? 'Scan the linked-device code to begin monitoring.'
       : 'The bridge is reconnecting or waiting for its first link.';
-  $('#pair-button').textContent = connected ? 'View connection' : 'Connect WhatsApp';
+  $('#gmail-bridge-copy').textContent = gmailConnected
+    ? `Gmail connected${state.gmail.account ? ` as ${state.gmail.account}` : ''}; checked every ${state.gmail.pollSeconds || 60} seconds.`
+    : state.gmail.configured ? 'Gmail is ready to connect.' : 'Add Google OAuth credentials on the server to enable Gmail.';
+  $('#gmail-dialog-state').textContent = gmailConnected ? 'Connected' : state.gmail.connection === 'error' ? 'Needs attention' : state.gmail.configured ? 'Not connected' : 'Not configured';
+  $('#gmail-dialog-copy').textContent = gmailConnected
+    ? `Connected as ${state.gmail.account}. Only new email from enabled labels or senders is inspected.`
+    : state.gmail.configured ? 'Authorize read-only access, then choose labels or senders under Monitored sources.' : 'Google OAuth credentials are not configured on this server yet.';
+  $('#gmail-connect-button').hidden = gmailConnected;
+  $('#gmail-connect-button').disabled = !state.gmail.configured;
+  $('#gmail-disconnect-button').hidden = !gmailConnected;
+  $('#pair-button').textContent = 'Manage connections';
   $('#pair-connected').hidden = !connected;
   $('#pair-steps').hidden = connected;
   $('#connected-account').textContent = state.bridge.account ? `Linked as ${state.bridge.account}` : 'Threadmark is receiving new messages.';
@@ -230,6 +276,7 @@ function connectStream() {
   stream.addEventListener('item', async () => { await refreshFeedAndSummary(); });
   stream.addEventListener('groups', (event) => { state.groups = JSON.parse(event.data); renderSources(); });
   stream.addEventListener('contacts', (event) => { state.contacts = JSON.parse(event.data); renderSources(); });
+  stream.addEventListener('gmail-sources', (event) => { state.gmailSources = JSON.parse(event.data); renderSources(); });
   stream.addEventListener('rules', (event) => { state.rules = JSON.parse(event.data); renderRules(); });
   stream.addEventListener('bridge', (event) => { state.bridge = JSON.parse(event.data); renderBridge(); });
   stream.addEventListener('settings', (event) => { state.settings = JSON.parse(event.data); renderSettings(); renderDetection(); });
@@ -322,6 +369,8 @@ $$('[data-scope-tab]').forEach((tab) => tab.addEventListener('click', () => {
   });
   $('#groups-list').hidden = tab.dataset.scopeTab !== 'groups';
   $('#contacts-list').hidden = tab.dataset.scopeTab !== 'contacts';
+  $('#gmail-labels-list').hidden = tab.dataset.scopeTab !== 'gmail_labels';
+  $('#gmail-senders-list').hidden = tab.dataset.scopeTab !== 'gmail_senders';
   state.scopeMode = tab.dataset.scopeTab;
   state.scopeQuery = '';
   $('#scope-search').value = '';
@@ -431,6 +480,19 @@ $('#contacts-list').addEventListener('change', async (event) => {
   finally { input.disabled = false; }
 });
 
+for (const selector of ['#gmail-labels-list', '#gmail-senders-list']) $(selector).addEventListener('change', async (event) => {
+  const input = event.target.closest('[data-gmail-source-id]');
+  if (!input) return;
+  input.disabled = true;
+  try {
+    await api(`/api/gmail/sources/${encodeURIComponent(input.dataset.gmailSourceId)}/selection`, { method: 'POST', body: JSON.stringify({ selected: input.checked }) });
+    state.gmailSources = (await api('/api/gmail/sources')).sources;
+    state.summary = await api('/api/summary');
+    renderSources();
+  } catch (error) { input.checked = !input.checked; showToast(error.message); }
+  finally { input.disabled = false; }
+});
+
 for (const selector of ['#rules-button', '#side-rules-button', '#mobile-rules-button']) $(selector).addEventListener('click', openRules);
 function openRules() {
   renderRules();
@@ -507,10 +569,11 @@ function renderRuleSources(selectedIds = []) {
   const sources = [
     ...state.groups.filter((source) => source.selected).map((source) => ({ ...source, kind: 'Group' })),
     ...state.contacts.filter((source) => source.selected).map((source) => ({ ...source, kind: 'Person' })),
+    ...state.gmailSources.filter((source) => source.selected).map((source) => ({ ...source, kind: source.kind === 'gmail_label' ? 'Gmail label' : 'Gmail sender' })),
   ];
   $('#rule-sources').innerHTML = sources.length
     ? sources.map((source) => `<label class="rule-source"><input type="checkbox" value="${escapeHtml(source.id)}" ${selected.has(source.id) ? 'checked' : ''}><span>${escapeHtml(source.name)} <small>${source.kind}</small></span></label>`).join('')
-    : '<div class="empty-state compact"><p>Select at least one monitored chat first.</p></div>';
+    : '<div class="empty-state compact"><p>Select at least one monitored source first.</p></div>';
 }
 
 $('#rule-scope').addEventListener('change', () => {
@@ -631,10 +694,32 @@ $('#rules-list').addEventListener('click', async (event) => {
 for (const selector of ['#connection-button', '#pair-button', '#mobile-connect-button']) $(selector).addEventListener('click', openPairing);
 async function openPairing() {
   $('#pair-dialog').showModal();
-  try { state.bridge = await api('/api/whatsapp/status'); renderBridge(); }
+  try {
+    [state.bridge, state.gmail] = await Promise.all([api('/api/whatsapp/status'), api('/api/gmail/status')]);
+    renderBridge();
+  }
   catch (error) { showToast(error.message); }
 }
 $('#pair-close').addEventListener('click', () => $('#pair-dialog').close());
+
+$('#gmail-connect-button').addEventListener('click', async () => {
+  const button = $('#gmail-connect-button');
+  button.disabled = true;
+  try {
+    const result = await api('/api/gmail/connect', { method: 'POST', body: '{}' });
+    if (!result.authorizationUrl?.startsWith('https://accounts.google.com/')) throw new Error('Google returned an invalid authorization URL.');
+    location.assign(result.authorizationUrl);
+  } catch (error) { showToast(error.message); button.disabled = false; }
+});
+
+$('#gmail-disconnect-button').addEventListener('click', async () => {
+  if (!confirm('Disconnect Gmail and remove its OAuth tokens from this server? Existing attention items will remain.')) return;
+  try {
+    state.gmail = await api('/api/gmail/disconnect', { method: 'POST', body: '{}' });
+    renderBridge();
+    showToast('Gmail disconnected');
+  } catch (error) { showToast(error.message); }
+});
 
 $$('[data-pair-tab]').forEach((tab) => tab.addEventListener('click', () => {
   $$('[data-pair-tab]').forEach((item) => item.classList.toggle('active', item === tab));
@@ -826,9 +911,10 @@ function itemActions(item) {
   const calendar = item.eventAt ? `<a class="menu-action" href="/api/items/${encodeURIComponent(item.id)}/calendar.ics" download>Add to calendar</a>` : '';
   const contactNumber = item.source?.kind === 'contact' ? String(item.source.id || '').match(/^(\d+)@s\.whatsapp\.net$/u)?.[1] : '';
   const whatsapp = item.details?.needsReview && contactNumber ? `<a class="menu-action" href="https://wa.me/${contactNumber}" target="_blank" rel="noopener">Open WhatsApp chat</a>` : '';
+  const gmail = item.source?.kind?.startsWith('gmail_') && item.externalUrl ? `<a class="menu-action" href="${escapeHtml(item.externalUrl)}" target="_blank" rel="noopener">Open in Gmail</a>` : '';
   return `<details class="item-actions"><summary>Actions</summary><div class="item-action-menu">
     <button type="button" data-action="done" data-id="${escapeHtml(item.id)}">Mark done</button>
-    ${whatsapp}
+    ${whatsapp}${gmail}
     <button type="button" data-action="snooze" data-hours="1" data-id="${escapeHtml(item.id)}">Snooze 1 hour</button>
     <button type="button" data-action="snooze" data-hours="24" data-id="${escapeHtml(item.id)}">Snooze 1 day</button>
     ${calendar}<button type="button" data-action="useful" data-id="${escapeHtml(item.id)}">This was useful</button>
@@ -849,7 +935,7 @@ function base64Key(value) {
 
 setInterval(async () => {
   if (!state.authenticated) return;
-  try { state.bridge = await api('/api/whatsapp/status'); renderBridge(); } catch {}
+  try { [state.bridge, state.gmail] = await Promise.all([api('/api/whatsapp/status'), api('/api/gmail/status')]); renderBridge(); } catch {}
 }, 10_000);
 
 boot();

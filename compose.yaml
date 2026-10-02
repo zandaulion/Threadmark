@@ -11,6 +11,7 @@ services:
       PORT: 4391
       DATA_DIR: /data
       BRIDGE_CONTROL_URL: http://bridge:4392
+      GMAIL_CONTROL_URL: http://gmail:4393
     ports:
       - "127.0.0.1:4391:4391"
     volumes:
@@ -33,6 +34,25 @@ services:
       APP_INTERNAL_URL: http://app:4391
     volumes:
       - ${THREADMARK_DATA_DIR:-./data}/bridge:/data:Z
+    networks: [threadmark]
+    security_opt: [no-new-privileges]
+    cap_drop: [ALL]
+    restart: unless-stopped
+    depends_on: [app]
+  gmail:
+    build:
+      context: .
+      dockerfile: deploy/Containerfile.gmail
+    image: localhost/threadmark-gmail:latest
+    container_name: threadmark-gmail
+    env_file: ${THREADMARK_ENV_FILE:-./deploy/threadmark.env}
+    environment:
+      HOST: 0.0.0.0
+      PORT: 4393
+      DATA_DIR: /data
+      APP_INTERNAL_URL: http://app:4391
+    volumes:
+      - ${THREADMARK_DATA_DIR:-./data}/gmail:/data:Z
     networks: [threadmark]
     security_opt: [no-new-privileges]
     cap_drop: [ALL]

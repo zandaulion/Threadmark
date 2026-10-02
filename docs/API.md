@@ -75,7 +75,7 @@ Settings body:
 }
 ```
 
-SSE event names are `ready`, `item`, `groups`, `contacts`, `rules`, `bridge` and `settings`.
+SSE event names are `ready`, `item`, `groups`, `contacts`, `gmail-sources`, `rules`, `bridge` and `settings`.
 
 ## Sources
 
@@ -87,6 +87,8 @@ SSE event names are `ready`, `item`, `groups`, `contacts`, `rules`, `bridge` and
 | `POST` | `/api/contacts/:id/selection` | Set `{selected}` |
 | `POST` | `/api/contacts/lookup` | Resolve `{phoneNumber}` through local bridge |
 | `POST` | `/api/contacts/import` | Resolve up to 100 `{phoneNumber,name}` entries |
+| `GET` | `/api/gmail/sources` | Known Gmail labels/senders and selection state |
+| `POST` | `/api/gmail/sources/:id/selection` | Set `{selected}` |
 
 Selections affect only new events. Phone numbers must contain 8–15 digits after punctuation is removed.
 
@@ -147,6 +149,15 @@ Limits are 100 total rules, 20 semantic rules, 30 phrase terms and 200 source ID
 | `POST` | `/api/whatsapp/pairing-code` | Request code for `{phoneNumber}` |
 | `GET` | `/api/whatsapp/qr.svg` | Proxy the current QR SVG |
 
+## Gmail control
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/gmail/status` | OAuth/synchronization state |
+| `POST` | `/api/gmail/connect` | Create a single-use Google authorization URL |
+| `GET` | `/api/gmail/oauth/callback` | Google redirect; protected by OAuth state rather than the Strict cookie |
+| `POST` | `/api/gmail/disconnect` | Revoke access and remove local OAuth credentials |
+
 ## Internal bridge API
 
 | Method | Path | Purpose |
@@ -154,6 +165,7 @@ Limits are 100 total rules, 20 semantic rules, 30 phrase terms and 200 source ID
 | `GET` | `/internal/routing` | Selected source IDs and media/outgoing flags |
 | `POST` | `/internal/groups` | Upsert `{groups:[...]}` metadata |
 | `POST` | `/internal/contacts` | Upsert `{contacts:[...]}` metadata |
+| `POST` | `/internal/gmail/sources` | Upsert `{sources:[...]}` label/sender metadata |
 | `POST` | `/internal/events` | Ingest one normalized message |
 | `POST` | `/internal/status` | Store and broadcast bridge state |
 
@@ -188,6 +200,8 @@ The app proxies to the bridge control service; it should never be exposed to bro
 | `POST` | `/pairing-code` | Request WhatsApp phone pairing code |
 | `POST` | `/contact-lookup` | Resolve one number |
 | `POST` | `/contacts-lookup` | Resolve up to 100 numbers |
+
+The Gmail connector has corresponding token-protected `/health`, `/status`, `/oauth/start`, `/oauth/callback` and `/disconnect` routes. They are reachable only by the app container.
 
 ## Errors
 

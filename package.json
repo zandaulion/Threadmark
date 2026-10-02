@@ -7,6 +7,7 @@
     "test": "node --test test/*.test.mjs",
     "start": "node app/server/index.mjs",
     "start:bridge": "node bridge/index.mjs",
+    "start:gmail": "node gmail/index.mjs",
     "screenshots": "node scripts/portfolio-screenshots.mjs"
   },
   "devDependencies": {

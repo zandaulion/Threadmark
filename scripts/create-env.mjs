@@ -31,6 +31,11 @@ const content = [
   'JEV_MODEL=jev-latest',
   'JEV_THRESHOLD=0.78',
   'JEV_TIMEOUT_MS=4500',
+  'GOOGLE_CLIENT_ID=',
+  'GOOGLE_CLIENT_SECRET=',
+  `GMAIL_OAUTH_REDIRECT_URI=${publicBaseUrl}/api/gmail/oauth/callback`,
+  `GMAIL_TOKEN_ENCRYPTION_KEY=${crypto.randomBytes(32).toString('base64url')}`,
+  'GMAIL_POLL_SECONDS=60',
   '',
 ].join('\n');
 fs.mkdirSync(path.dirname(destination), { recursive: true, mode: 0o700 });

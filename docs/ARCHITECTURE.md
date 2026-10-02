@@ -1,18 +1,19 @@
 # Architecture
 
-Threadmark separates WhatsApp access, attention detection and the browser interface into small replaceable components. The connector is deliberately independent from the PWA and detector logic so a future Telegram, email or official WhatsApp Business connector can emit the same normalized event format.
+Threadmark separates WhatsApp/Gmail access, attention detection and the browser interface into small replaceable components. Connectors are deliberately independent from the PWA and detector logic, and both emit the same normalized event format.
 
 ## Components
 
 | Component | Responsibility | Persistent data |
 | --- | --- | --- |
 | `threadmark-bridge` | WhatsApp linked-device connection, source discovery, local media extraction and durable event delivery | Baileys session credentials and the SQLite outbox |
+| `threadmark-gmail` | Read-only Gmail OAuth, incremental history polling, source discovery and durable event delivery | Encrypted OAuth state and the SQLite outbox |
 | `threadmark-app` | Invitation auth, source selection, detection, rules, item workflow, API, SSE, push and PWA assets | SQLite application database |
 | Browser PWA | Inbox, configuration, installable shell, service worker and push subscription | Revocable session cookie, PWA cache and browser push subscription |
 | `pwa-invite-console` | Private creation of invitations and device revocation through Threadmark's admin API | Managed by the external console |
 | TypeSafe AI / Jev | Optional typed semantic judgments and probabilities | External service; only invoked within the documented boundary |
 
-The default Podman deployment puts the app and bridge on one network. The bridge has no host port. The app binds only to `127.0.0.1:4391`; a private HTTPS reverse proxy or Tailscale Serve provides browser access.
+The default Podman deployment puts the app and both connectors on one network. Connectors have no host ports. The app binds only to `127.0.0.1:4391`; a private HTTPS reverse proxy or Tailscale Serve provides browser access.
 
 ## Message flow
 
@@ -27,6 +28,8 @@ The default Podman deployment puts the app and bridge on one network. The bridge
 9. Only matched messages and attention items are stored. The server broadcasts changes through SSE and optionally sends Web Push.
 10. The browser renders the current filtered feed and applies actions through authenticated APIs.
 
+Gmail follows the same flow with a privacy-preserving routing stage. Connection stores the current `historyId` and deliberately performs no historical import. Each poll calls `history.list`; if Google reports an expired checkpoint, Threadmark resets to the current profile history without backfilling. New mail is first retrieved as metadata. A complete body is fetched only after a label or sender matches the allowlist. Plain text is preferred, HTML is reduced to text, quoted replies and signatures are removed, and attachments are ignored.
+
 ## Normalized connector event
 
 Connectors emit this logical shape:
@@ -36,13 +39,14 @@ Connectors emit this logical shape:
   id,
   sourceId,
   sourceName,
-  sourceKind,     // "group" or "contact"
+  sourceKind,     // group | contact | gmail_label | gmail_sender
   senderId,
   senderName,
   sentAt,
   text,
   direction,      // "incoming" or "outgoing"
-  media
+  media,
+  externalUrl     // optional validated link to the original
 }
 ```
 
@@ -88,7 +92,7 @@ All detectors return a stable shape:
 The application uses Node's built-in SQLite driver. The main entities are:
 
 - `devices` and `invites` for browser authorization;
-- `groups` for both groups and contacts, distinguished by `kind`, plus their selection state;
+- `groups` for all WhatsApp and Gmail sources, distinguished by `kind`, plus their selection state;
 - `messages` for matched message excerpts only;
 - `attention_items` for category, confidence, priority, status, snooze, feedback and detector details;
 - `rules` for local phrases and semantic conditions;
@@ -97,19 +101,20 @@ The application uses Node's built-in SQLite driver. The main entities are:
 
 Open attention items are preserved by retention pruning. Older messages whose items are no longer open are deleted after `RETENTION_DAYS`. Expired context is pruned by the same minute scheduler.
 
-The bridge keeps its own `outbox.sqlite`. WhatsApp multi-file auth state lives beside it in the bridge data volume. These stores serve different recovery purposes and should be backed up together.
+Each connector keeps its own `outbox.sqlite`. WhatsApp multi-file auth state lives in the bridge volume. Gmail OAuth credentials are AES-256-GCM encrypted in the Gmail volume with a key held in the protected environment file. These stores serve different recovery purposes and should be backed up together.
 
 ## Authentication and trust boundaries
 
-Browser access is invitation-based. A single-use code creates a random device token; only a hash is stored in SQLite, while the browser receives an HttpOnly, SameSite cookie. Administrators use a separate `ADMIN_TOKEN`. Bridge-only endpoints require `BRIDGE_TOKEN` and are not exposed by the public route.
+Browser access is invitation-based. A single-use code creates a random device token; only a hash is stored in SQLite, while the browser receives an HttpOnly, SameSite cookie. Administrators use a separate `ADMIN_TOKEN`. Connector-only endpoints require `BRIDGE_TOKEN` and are not exposed by the public route. The unauthenticated Google callback is limited to a single-use, random, ten-minute OAuth state value because the Strict browser cookie is intentionally absent on a cross-site return.
 
 State-changing requests reject cross-origin browser origins. API responses use `no-store`. Static files reject traversal and hidden paths. Containers drop all Linux capabilities and enable `no-new-privileges`.
 
-The three material trust boundaries are:
+The material trust boundaries are:
 
 1. WhatsApp/Baileys to the local bridge;
-2. browser to the HTTPS app origin;
-3. optional selected message text from the app to TypeSafe AI.
+2. Google OAuth/Gmail API to the local Gmail connector;
+3. browser to the HTTPS app origin;
+4. optional selected message text from the app to TypeSafe AI.
 
 See [Privacy and security](PRIVACY.md) for the data sent across each boundary.
 

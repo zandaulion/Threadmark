@@ -1,0 +1,25 @@
+[Unit]
+Description=Threadmark Gmail read-only connector
+After=network-online.target threadmark-app.service
+Wants=network-online.target threadmark-app.service
+
+[Container]
+Image=localhost/threadmark-gmail:latest
+ContainerName=threadmark-gmail
+Network=threadmark.network
+Volume=%h/.local/share/threadmark/gmail:/data:Z
+EnvironmentFile=%h/.config/threadmark/server.env
+Environment=HOST=0.0.0.0
+Environment=PORT=4393
+Environment=DATA_DIR=/data
+Environment=APP_INTERNAL_URL=http://threadmark-app:4391
+NoNewPrivileges=true
+DropCapability=all
+
+[Service]
+ExecStartPre=/usr/bin/mkdir -p %h/.local/share/threadmark/gmail
+Restart=always
+RestartSec=8
+
+[Install]
+WantedBy=default.target

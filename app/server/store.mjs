@@ -119,6 +119,7 @@ export function openDatabase(dataDir) {
   if (!groupColumns.some((column) => column.name === 'kind')) {
     db.exec("ALTER TABLE groups ADD COLUMN kind TEXT NOT NULL DEFAULT 'group' CHECK(kind IN ('group','contact'))");
   }
+  ensureSourceKinds(db);
   db.exec('CREATE INDEX IF NOT EXISTS groups_kind_idx ON groups(kind, selected, name)');
   const unresolved = db.prepare(`SELECT id, name FROM groups
     WHERE kind='contact' AND selected=0 AND id LIKE '%@lid'
@@ -195,6 +196,36 @@ export class ThreadmarkStore {
 
   selectContact(id, selected) {
     return this.db.prepare("UPDATE groups SET selected=?, updated_at=? WHERE id=? AND kind='contact'")
+      .run(selected ? 1 : 0, now(), id).changes === 1;
+  }
+
+  upsertGmailSources(sources) {
+    const statement = this.db.prepare(`INSERT INTO groups (id, name, participant_count, selected, updated_at, kind)
+      VALUES (?, ?, 0, 0, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET name=excluded.name, updated_at=excluded.updated_at, kind=excluded.kind`);
+    const timestamp = now();
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      for (const source of sources.slice(0, 10_000)) {
+        if (!validGmailSource(source)) continue;
+        statement.run(source.id, String(source.name).slice(0, 240), timestamp, source.kind);
+      }
+      this.db.exec('COMMIT');
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
+    return this.listGmailSources();
+  }
+
+  listGmailSources() {
+    return this.db.prepare(`SELECT id, name, kind, selected, updated_at
+      FROM groups WHERE kind IN ('gmail_label','gmail_sender') ORDER BY selected DESC, kind, name COLLATE NOCASE`).all()
+      .map((row) => ({ ...row, selected: Boolean(row.selected) }));
+  }
+
+  selectGmailSource(id, selected) {
+    return this.db.prepare("UPDATE groups SET selected=?, updated_at=? WHERE id=? AND kind IN ('gmail_label','gmail_sender')")
       .run(selected ? 1 : 0, now(), id).changes === 1;
   }
 
@@ -298,7 +329,8 @@ export class ThreadmarkStore {
   routingConfig() {
     const settings = this.settings();
     return {
-      sourceIds: this.db.prepare('SELECT id FROM groups WHERE selected=1').all().map((row) => row.id),
+      sourceIds: this.db.prepare("SELECT id FROM groups WHERE selected=1 AND kind IN ('group','contact')").all().map((row) => row.id),
+      gmailSources: this.db.prepare("SELECT id, name, kind FROM groups WHERE selected=1 AND kind IN ('gmail_label','gmail_sender')").all(),
       outgoingMonitoring: settings.outgoingMonitoring,
       attachmentProcessing: settings.attachmentProcessing,
     };
@@ -324,7 +356,8 @@ export class ThreadmarkStore {
     const knownSource = this.db.prepare('SELECT selected FROM groups WHERE id=? AND kind=?').get(source.id, source.kind);
     if (!knownSource) {
       if (source.kind === 'group') this.upsertGroups([{ id: source.id, name: source.name, participantCount: 0 }]);
-      else this.upsertContacts([{ id: source.id, name: source.name }]);
+      else if (source.kind === 'contact') this.upsertContacts([{ id: source.id, name: source.name }]);
+      else this.upsertGmailSources([{ id: source.id, name: source.name, kind: source.kind }]);
     } else if (source.kind === 'contact' && source.name) {
       this.upsertContacts([{ id: source.id, name: source.name }]);
     }
@@ -340,8 +373,8 @@ export class ThreadmarkStore {
     this.db.exec('BEGIN IMMEDIATE');
     try {
       const inserted = this.db.prepare(`INSERT INTO messages
-        (id, group_id, sender_id, sender_name, sent_at, text, direction, media_json, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING`).run(
+        (id, group_id, sender_id, sender_name, sent_at, text, direction, media_json, external_url, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING`).run(
           message.id,
           source.id,
           String(message.senderId || '').slice(0, 160),
@@ -350,6 +383,7 @@ export class ThreadmarkStore {
           String(message.text || '').slice(0, 65_536),
           message.direction === 'outgoing' ? 'outgoing' : 'incoming',
           JSON.stringify(normaliseMedia(message.media)),
+          safeExternalUrl(message.externalUrl),
           now(),
         );
       if (inserted.changes === 0) {
@@ -554,7 +588,7 @@ export class ThreadmarkStore {
   summary() {
     const rows = this.db.prepare(`SELECT type, COUNT(*) AS count FROM attention_items
       WHERE status='open' AND (snoozed_until IS NULL OR datetime(snoozed_until)<=datetime('now')) GROUP BY type`).all();
-    const summary = { open: 0, payments: 0, meetings: 0, reminders: 0, snoozed: 0, groups: 0, contacts: 0 };
+    const summary = { open: 0, payments: 0, meetings: 0, reminders: 0, snoozed: 0, groups: 0, contacts: 0, gmail: 0 };
     for (const row of rows) {
       summary.open += Number(row.count);
       if (row.type === 'payment') summary.payments = Number(row.count);
@@ -563,6 +597,7 @@ export class ThreadmarkStore {
     }
     summary.groups = Number(this.db.prepare("SELECT COUNT(*) AS count FROM groups WHERE selected=1 AND kind='group'").get().count);
     summary.contacts = Number(this.db.prepare("SELECT COUNT(*) AS count FROM groups WHERE selected=1 AND kind='contact'").get().count);
+    summary.gmail = Number(this.db.prepare("SELECT COUNT(*) AS count FROM groups WHERE selected=1 AND kind IN ('gmail_label','gmail_sender')").get().count);
     summary.snoozed = Number(this.db.prepare("SELECT COUNT(*) AS count FROM attention_items WHERE status='open' AND datetime(snoozed_until)>datetime('now')").get().count);
     return summary;
   }
@@ -613,7 +648,7 @@ function itemSelect() {
   return `SELECT a.id, a.type, a.title, a.details_json, a.event_at, a.amount_minor,
     a.currency, a.confidence, a.priority, a.notify, a.status, a.created_at, a.resolved_at,
     a.snoozed_until, a.last_notified_at, a.feedback, a.feedback_at,
-    m.text, m.sender_name, m.sent_at, m.direction, m.media_json,
+    m.text, m.sender_name, m.sent_at, m.direction, m.media_json, m.external_url,
     g.id AS source_id, g.name AS source_name, g.kind AS source_kind
     FROM attention_items a JOIN messages m ON m.id=a.message_id
     JOIN groups g ON g.id=m.group_id`;
@@ -644,6 +679,7 @@ function publicItem(row) {
     sentAt: row.sent_at,
     direction: row.direction || 'incoming',
     media: safeJson(row.media_json),
+    externalUrl: row.external_url || null,
     source: { id: row.source_id, name: row.source_name, kind: row.source_kind },
     group: { id: row.source_id, name: row.source_name, kind: row.source_kind },
   };
@@ -729,6 +765,32 @@ function ensureMessageSchema(db) {
     db.exec("ALTER TABLE messages ADD COLUMN direction TEXT NOT NULL DEFAULT 'incoming' CHECK(direction IN ('incoming','outgoing'))");
   }
   if (!columns.some((column) => column.name === 'media_json')) db.exec("ALTER TABLE messages ADD COLUMN media_json TEXT NOT NULL DEFAULT '{}'");
+  if (!columns.some((column) => column.name === 'external_url')) db.exec('ALTER TABLE messages ADD COLUMN external_url TEXT');
+}
+
+function ensureSourceKinds(db) {
+  const sql = String(db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='groups'").get()?.sql || '');
+  if (sql.includes('gmail_label') && sql.includes('gmail_sender')) return;
+  db.exec(`
+    PRAGMA foreign_keys=OFF;
+    PRAGMA legacy_alter_table=ON;
+    BEGIN IMMEDIATE;
+    ALTER TABLE groups RENAME TO groups_legacy;
+    CREATE TABLE groups (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      participant_count INTEGER NOT NULL DEFAULT 0,
+      selected INTEGER NOT NULL DEFAULT 0 CHECK(selected IN (0,1)),
+      updated_at TEXT NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'group' CHECK(kind IN ('group','contact','gmail_label','gmail_sender'))
+    );
+    INSERT INTO groups (id, name, participant_count, selected, updated_at, kind)
+      SELECT id, name, participant_count, selected, updated_at, kind FROM groups_legacy;
+    DROP TABLE groups_legacy;
+    COMMIT;
+    PRAGMA legacy_alter_table=OFF;
+    PRAGMA foreign_keys=ON;
+  `);
 }
 
 function validGroup(group) {
@@ -737,6 +799,12 @@ function validGroup(group) {
 
 function validContact(contact) {
   return contact && typeof contact.id === 'string' && isContactId(contact.id) && typeof contact.name === 'string';
+}
+
+function validGmailSource(source) {
+  return source && ['gmail_label', 'gmail_sender'].includes(source.kind)
+    && typeof source.id === 'string' && source.id.startsWith(source.kind === 'gmail_label' ? 'gmail:label:' : 'gmail:sender:')
+    && typeof source.name === 'string' && source.name.trim();
 }
 
 function isContactId(id) {
@@ -751,6 +819,7 @@ function sourceFromMessage(message) {
   const name = String(message.sourceName || message.groupName || message.senderName || (kind === 'group' ? 'WhatsApp group' : contactLabel(id)));
   if (kind === 'group' && validGroup({ id, name })) return { id, name, kind };
   if (kind === 'contact' && validContact({ id, name })) return { id, name, kind };
+  if (validGmailSource({ id, name, kind })) return { id, name, kind };
   return null;
 }
 
@@ -766,6 +835,13 @@ function safeIso(value) {
 
 function safeJson(value) {
   try { return typeof value === 'string' ? JSON.parse(value) : value || {}; } catch { return {}; }
+}
+
+function safeExternalUrl(value) {
+  try {
+    const url = new URL(String(value || ''));
+    return url.protocol === 'https:' && url.hostname === 'mail.google.com' ? url.toString().slice(0, 1000) : null;
+  } catch { return null; }
 }
 
 function normaliseMedia(media) {

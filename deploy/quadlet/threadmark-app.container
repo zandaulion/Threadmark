@@ -14,6 +14,7 @@ Environment=HOST=0.0.0.0
 Environment=PORT=4391
 Environment=DATA_DIR=/data
 Environment=BRIDGE_CONTROL_URL=http://threadmark-bridge:4392
+Environment=GMAIL_CONTROL_URL=http://threadmark-gmail:4393
 NoNewPrivileges=true
 DropCapability=all
 

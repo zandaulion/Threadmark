@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#111827">
-  <meta name="description" content="A private attention inbox for selected WhatsApp groups and people.">
+  <meta name="description" content="A private attention inbox for selected WhatsApp chats and Gmail sources.">
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/icons/icon.svg">
@@ -33,9 +33,9 @@
       <a class="brand" href="/" aria-label="Threadmark home"><span class="mark" aria-hidden="true">T</span><span>Threadmark</span></a>
       <div class="header-actions">
         <button class="connection-pill" id="connection-button" type="button" aria-haspopup="dialog">
-          <span class="status-dot" id="status-dot"></span><span id="connection-label">Checking WhatsApp</span>
+          <span class="status-dot" id="status-dot"></span><span id="connection-label">Checking sources</span>
         </button>
-        <button class="icon-button" id="groups-button" type="button" aria-label="Choose monitored chats" title="Monitored chats">
+        <button class="icon-button" id="groups-button" type="button" aria-label="Choose monitored sources" title="Monitored sources">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
         </button>
         <button class="icon-button" id="rules-button" type="button" aria-label="Manage rules" title="Rules">
@@ -53,7 +53,7 @@
           <div>
             <p class="eyebrow" id="today-label">Today</p>
             <h1>Your attention, distilled.</h1>
-            <p class="lede">Payments, meetings, and reminders from the chats you chose—nothing else.</p>
+            <p class="lede">Payments, meetings, and reminders from the conversations you chose—nothing else.</p>
           </div>
           <button class="button alerts-button" id="alerts-button" type="button">Enable alerts</button>
         </div>
@@ -97,15 +97,16 @@
 
       <aside class="side-column">
         <section class="side-card connection-card">
-          <div class="side-card-head"><p class="eyebrow">Live source</p><span class="mini-state" id="mini-state">Offline</span></div>
-          <h2>WhatsApp bridge</h2>
+          <div class="side-card-head"><p class="eyebrow">Live sources</p><span class="mini-state" id="mini-state">Offline</span></div>
+          <h2>WhatsApp + Gmail</h2>
           <p id="bridge-copy">Checking the linked-device connection.</p>
-          <button class="button dark wide" id="pair-button" type="button">Connect WhatsApp</button>
+          <p class="connection-secondary" id="gmail-bridge-copy">Checking Gmail.</p>
+          <button class="button dark wide" id="pair-button" type="button">Manage connections</button>
         </section>
         <section class="side-card">
-          <div class="side-card-head"><p class="eyebrow">Listening to</p><span class="group-count" id="group-count">0 groups · 0 people</span></div>
+          <div class="side-card-head"><p class="eyebrow">Listening to</p><span class="group-count" id="group-count">0 sources</span></div>
           <div id="selected-groups" class="selected-groups"></div>
-          <button class="text-button align-left" id="edit-groups-button" type="button">Choose chats</button>
+          <button class="text-button align-left" id="edit-groups-button" type="button">Choose sources</button>
         </section>
         <section class="side-card quiet-card">
           <p class="eyebrow">Privacy rule</p>
@@ -128,16 +129,18 @@
   <dialog id="groups-dialog" class="modal">
     <form method="dialog" class="modal-shell">
       <div class="modal-head">
-        <div><p class="eyebrow">Message scope</p><h2>Monitored chats</h2></div>
+        <div><p class="eyebrow">Message scope</p><h2>Monitored sources</h2></div>
         <button class="close-button" value="close" aria-label="Close">×</button>
       </div>
-      <p class="modal-copy">Groups and people are off by default. Changes apply only to new messages.</p>
-      <div class="scope-tabs" role="tablist" aria-label="Chat type">
+      <p class="modal-copy">WhatsApp chats, Gmail labels, and Gmail senders are off by default. Changes apply only to new messages.</p>
+      <div class="scope-tabs" role="tablist" aria-label="Source type">
         <button class="scope-tab active" type="button" role="tab" aria-selected="true" data-scope-tab="groups">Groups</button>
         <button class="scope-tab" type="button" role="tab" aria-selected="false" data-scope-tab="contacts">People</button>
+        <button class="scope-tab" type="button" role="tab" aria-selected="false" data-scope-tab="gmail_labels">Gmail labels</button>
+        <button class="scope-tab" type="button" role="tab" aria-selected="false" data-scope-tab="gmail_senders">Senders</button>
       </div>
       <div id="scope-search-form" class="scope-search" role="search">
-        <label class="visually-hidden" for="scope-search">Search monitored chats</label>
+        <label class="visually-hidden" for="scope-search">Search monitored sources</label>
         <span class="search-glyph" aria-hidden="true">⌕</span>
         <input id="scope-search" type="search" autocomplete="off" placeholder="Search groups" aria-describedby="scope-search-note">
         <button id="contact-lookup-button" class="lookup-button" type="button" hidden>Add number</button>
@@ -149,6 +152,8 @@
       </div>
       <div id="groups-list" class="groups-list"></div>
       <div id="contacts-list" class="groups-list" hidden></div>
+      <div id="gmail-labels-list" class="groups-list" hidden></div>
+      <div id="gmail-senders-list" class="groups-list" hidden></div>
       <div class="modal-footer"><button class="button dark" value="close">Done</button></div>
     </form>
   </dialog>
@@ -185,7 +190,7 @@
         <div><p class="eyebrow">Attention logic</p><h2>Rules</h2></div>
         <button class="close-button" id="rules-close" type="button" aria-label="Close">×</button>
       </div>
-      <p class="modal-copy">Create exact local rules or semantic Jev monitors for new messages from monitored chats.</p>
+      <p class="modal-copy">Create exact local rules or semantic Jev monitors for new messages from monitored sources.</p>
       <details class="jev-card" id="jev-details">
         <summary class="jev-card-summary">
           <div><p class="eyebrow">Semantic fallback</p><h3>Jev detection</h3></div>
@@ -224,10 +229,10 @@
           <textarea id="rule-condition" rows="3" maxlength="500" placeholder="Someone needs a decision or reply from me."></textarea>
           <label for="rule-threshold">Match threshold</label>
           <div class="threshold-field"><input id="rule-threshold" type="number" min="50" max="99" step="1" value="78" inputmode="numeric"><span>% probability</span></div>
-          <p class="semantic-privacy">Only otherwise-unmatched text from chats in this rule's scope is sent to TypeSafe AI. Chat identities are not sent.</p>
+          <p class="semantic-privacy">Only otherwise-unmatched text from sources in this rule's scope is sent to TypeSafe AI. Source identities are not sent.</p>
         </div>
         <label for="rule-scope">Applies to</label>
-        <select id="rule-scope"><option value="all">All monitored chats</option><option value="sources">Specific monitored chats</option></select>
+        <select id="rule-scope"><option value="all">All monitored sources</option><option value="sources">Specific monitored sources</option></select>
         <div id="rule-sources" class="rule-sources" hidden></div>
         <label class="rule-option"><input id="rule-notify" type="checkbox" checked><span>Send a notification when this rule matches</span></label>
         <div class="rule-test">
@@ -245,15 +250,17 @@
   <dialog id="pair-dialog" class="modal">
     <div class="modal-shell pairing-shell">
       <div class="modal-head">
-        <div><p class="eyebrow">Linked device</p><h2>Connect WhatsApp</h2></div>
+        <div><p class="eyebrow">Private connectors</p><h2>Connections</h2></div>
         <button class="close-button" id="pair-close" type="button" aria-label="Close">×</button>
       </div>
-      <div id="pair-connected" hidden>
-        <div class="connected-seal">✓</div>
-        <h3>Connected</h3>
-        <p id="connected-account">Threadmark is receiving new messages.</p>
-      </div>
-      <div id="pair-steps">
+      <section class="connection-section">
+        <div class="connection-section-head"><div><p class="eyebrow">WhatsApp</p><h3>Linked device</h3></div><span class="mini-state" id="whatsapp-dialog-state">Offline</span></div>
+        <div id="pair-connected" hidden>
+          <div class="connected-seal">✓</div>
+          <h3>Connected</h3>
+          <p id="connected-account">Threadmark is receiving new messages.</p>
+        </div>
+        <div id="pair-steps">
         <div class="pair-tabs" role="tablist" aria-label="Pairing method">
           <button class="pair-tab active" data-pair-tab="qr" type="button">QR code</button>
           <button class="pair-tab" data-pair-tab="phone" type="button">Phone number</button>
@@ -271,8 +278,16 @@
           <output class="pairing-code" id="pairing-code" aria-live="polite"></output>
           <p class="modal-copy">In WhatsApp, choose Linked devices, then “Link with phone number” and enter this code.</p>
         </section>
-      </div>
-      <p class="warning-note">This uses an unofficial linked-device connector. Keep Threadmark read-only and disconnect it from WhatsApp if anything looks unexpected.</p>
+        </div>
+        <p class="warning-note">This uses an unofficial linked-device connector. Keep Threadmark read-only and disconnect it from WhatsApp if anything looks unexpected.</p>
+      </section>
+      <section class="connection-section gmail-connection">
+        <div class="connection-section-head"><div><p class="eyebrow">Gmail</p><h3>Read-only mailbox</h3></div><span class="mini-state" id="gmail-dialog-state">Checking</span></div>
+        <p class="modal-copy" id="gmail-dialog-copy">Threadmark checks new messages from the labels and senders you enable.</p>
+        <button class="button dark wide" id="gmail-connect-button" type="button">Connect personal Gmail</button>
+        <button class="text-button" id="gmail-disconnect-button" type="button" hidden>Disconnect Gmail</button>
+        <p class="privacy-note">Threadmark cannot send, delete, modify, or mark email as read. Attachments are not downloaded.</p>
+      </section>
     </div>
   </dialog>
 

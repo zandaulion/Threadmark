@@ -37,8 +37,22 @@ By default this writes `~/.config/threadmark/server.env` and refuses to overwrit
 | `JEV_MODEL` | TypeSafe model name | `jev-latest` |
 | `JEV_THRESHOLD` | Built-in semantic threshold | `0.78` |
 | `JEV_TIMEOUT_MS` | Maximum Jev request time | `4500` |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google OAuth web client | empty until configured |
+| `GMAIL_OAUTH_REDIRECT_URI` | Exact authorized callback URI | generated from `PUBLIC_BASE_URL` |
+| `GMAIL_TOKEN_ENCRYPTION_KEY` | Encrypt the Gmail refresh token at rest | random 32-byte base64url |
+| `GMAIL_POLL_SECONDS` | Incremental Gmail polling interval | `60` |
 
-Runtime-only variables include `HOST`, `PORT`, `DATA_DIR`, `BRIDGE_CONTROL_URL` for the app and `APP_INTERNAL_URL` for the bridge. Container definitions set these correctly.
+Runtime-only variables include `HOST`, `PORT`, `DATA_DIR`, connector control URLs for the app and `APP_INTERNAL_URL` for connectors. Container definitions set these correctly.
+
+### Personal Gmail OAuth
+
+In Google Cloud Console, enable Gmail API, configure an External OAuth consent screen, and create a **Web application** OAuth client. Its authorized redirect URI must exactly equal `GMAIL_OAUTH_REDIRECT_URI`. Add your Gmail address as a test user while the consent screen is in Testing, then store the credentials with:
+
+```bash
+node scripts/configure-gmail.mjs
+```
+
+Testing-mode refresh tokens for personal Gmail normally expire after seven days. Move the consent screen to **In production** for unattended use. Apps distributed to other users may require Google verification because `gmail.readonly` is a restricted scope.
 
 ## Direct development run
 
@@ -47,6 +61,7 @@ Install and test:
 ```bash
 npm --prefix app ci
 npm --prefix bridge ci
+npm --prefix gmail ci
 npm test
 ```
 
@@ -68,7 +83,7 @@ set +a
 DATA_DIR="$PWD/data/bridge" HOST=127.0.0.1 node bridge/index.mjs
 ```
 
-The app listens on port `4391`; the bridge control endpoint listens on `4392`.
+Start `gmail/index.mjs` in a third terminal with `DATA_DIR="$PWD/data/gmail" HOST=127.0.0.1`. The app listens on `4391`; WhatsApp and Gmail connector control endpoints use `4392` and `4393`.
 
 ## Podman Compose
 
@@ -87,7 +102,7 @@ THREADMARK_DATA_DIR=/srv/threadmark \
 podman compose up --build -d
 ```
 
-The app port is published on loopback. The bridge is reachable only over the `threadmark` container network.
+The app port is published on loopback. Both connectors are reachable only over the `threadmark` container network.
 
 ## Rootless Quadlet production deployment
 
@@ -97,11 +112,12 @@ After generating `~/.config/threadmark/server.env`, run:
 ./deploy.sh
 ```
 
-The script installs pinned dependencies, runs tests, builds both images, installs the Quadlet files, starts the app, checks health and then starts the bridge. Persistent data is placed under:
+The script installs pinned dependencies, runs tests, builds all three images, installs the Quadlet files, starts the app, checks health and then starts both connectors. Persistent data is placed under:
 
 ```text
 ~/.local/share/threadmark/app
 ~/.local/share/threadmark/bridge
+~/.local/share/threadmark/gmail
 ```
 
 Enable lingering if the user services must run before login:
@@ -113,8 +129,8 @@ loginctl enable-linger "$USER"
 Inspect services:
 
 ```bash
-systemctl --user status threadmark-app.service threadmark-bridge.service
-journalctl --user -u threadmark-app.service -u threadmark-bridge.service -f
+systemctl --user status threadmark-app.service threadmark-bridge.service threadmark-gmail.service
+journalctl --user -u threadmark-app.service -u threadmark-bridge.service -u threadmark-gmail.service -f
 ```
 
 ## Private HTTPS exposure
@@ -132,7 +148,7 @@ If using Caddy, nginx or another proxy:
 - forward the full app origin to `127.0.0.1:4391`;
 - preserve streaming for `/api/stream` and avoid response buffering;
 - never inject `ADMIN_TOKEN` into the public route;
-- do not expose bridge port `4392`;
+- do not expose connector ports `4392` or `4393`;
 - keep HTTPS and `COOKIE_SECURE=1` in production.
 
 ## Invitation console integration
@@ -177,9 +193,10 @@ Container state:
 podman ps --filter name=threadmark
 podman logs --tail 100 threadmark-app
 podman logs --tail 100 threadmark-bridge
+podman logs --tail 100 threadmark-gmail
 ```
 
-The app performs due-notification checks, digest checks and retention pruning every minute. The bridge reconnects after ordinary disconnects and retains undelivered normalized events in its SQLite outbox.
+The app performs due-notification checks, digest checks and retention pruning every minute. Connectors retain undelivered normalized events in their SQLite outboxes. Gmail performs metadata-first incremental synchronization at the configured interval.
 
 ## Upgrade
 
@@ -198,21 +215,22 @@ Back up these as one encrypted set:
 
 - app data directory, including `threadmark.sqlite` and its WAL files;
 - bridge data directory, including `auth/` and `outbox.sqlite`;
+- Gmail data directory, including encrypted OAuth state and `outbox.sqlite`;
 - `server.env`.
 
-For a consistent simple backup, stop both services first:
+For a consistent simple backup, stop all services first:
 
 ```bash
-systemctl --user stop threadmark-bridge.service threadmark-app.service
+systemctl --user stop threadmark-bridge.service threadmark-gmail.service threadmark-app.service
 ```
 
-Copy the three locations to encrypted storage, then restart app before bridge:
+Copy all locations to encrypted storage, then restart app before connectors:
 
 ```bash
-systemctl --user start threadmark-app.service threadmark-bridge.service
+systemctl --user start threadmark-app.service threadmark-bridge.service threadmark-gmail.service
 ```
 
-To restore, stop both services, replace all three locations with the matching backup, confirm ownership and mode `0600` for the environment file, then start app followed by bridge. Treat every backup as a WhatsApp account credential because it includes linked-device keys.
+To restore, stop all services, replace every location with the matching backup, confirm ownership and mode `0600` for the environment file, then start the app followed by connectors. Treat every backup as both a WhatsApp and read-only Gmail account credential.
 
 ## Troubleshooting
 
@@ -234,6 +252,13 @@ To restore, stop both services, replace all three locations with the matching ba
 - Ensure `JEV_ENABLED=1` and `TYPESAFE_API_KEY` is non-empty.
 - Restart the app after changing the environment file.
 - Verify outbound network/DNS access from the app container.
+
+**Gmail will not connect or stops after seven days**
+
+- Confirm Gmail API is enabled and the authorized redirect URI exactly matches the Threadmark callback.
+- Confirm the Gmail address is an OAuth test user.
+- For persistent monitoring, change the OAuth consent screen from Testing to In production.
+- Inspect `threadmark-gmail` logs and reconnect if Google revoked or expired the token.
 
 **Push is unavailable**
 

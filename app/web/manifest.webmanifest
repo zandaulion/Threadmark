@@ -1,7 +1,7 @@
 {
   "name": "Threadmark",
   "short_name": "Threadmark",
-  "description": "A private attention inbox for selected WhatsApp groups and people.",
+  "description": "A private attention inbox for selected WhatsApp chats and Gmail sources.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

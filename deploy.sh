@@ -15,14 +15,16 @@ grep -Eq '^BRIDGE_TOKEN=[a-f0-9]{64}$' "$ENV_FILE" || { echo "BRIDGE_TOKEN is mi
 
 npm --prefix "$ROOT/app" ci --ignore-scripts
 npm --prefix "$ROOT/bridge" ci --ignore-scripts
+npm --prefix "$ROOT/gmail" ci --ignore-scripts
 npm --prefix "$ROOT" test
 
 podman build --tag localhost/threadmark-app:latest --file "$ROOT/deploy/Containerfile.app" "$ROOT"
 podman build --tag localhost/threadmark-bridge:latest --file "$ROOT/deploy/Containerfile.bridge" "$ROOT"
+podman build --tag localhost/threadmark-gmail:latest --file "$ROOT/deploy/Containerfile.gmail" "$ROOT"
 
-install -d -m 0700 "$HOME/.local/share/threadmark/app" "$HOME/.local/share/threadmark/bridge"
+install -d -m 0700 "$HOME/.local/share/threadmark/app" "$HOME/.local/share/threadmark/bridge" "$HOME/.local/share/threadmark/gmail"
 install -d -m 0755 "$QUADLET_DIR"
-for unit in threadmark.network threadmark-app.container threadmark-bridge.container; do
+for unit in threadmark.network threadmark-app.container threadmark-bridge.container threadmark-gmail.container; do
   install -m 0644 "$ROOT/deploy/quadlet/${unit}" "$QUADLET_DIR/${unit}"
 done
 systemctl --user daemon-reload
@@ -33,4 +35,5 @@ for _ in $(seq 1 30); do
 done
 curl -fsS --max-time 2 http://127.0.0.1:4391/api/health >/dev/null
 systemctl --user restart threadmark-bridge.service
+systemctl --user restart threadmark-gmail.service
 echo 'Threadmark deployed. The app is listening on 127.0.0.1:4391.'

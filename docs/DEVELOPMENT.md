@@ -6,13 +6,14 @@
 app/server/       HTTP API, auth, SQLite store, detectors, rules, Jev and push
 app/web/          dependency-free PWA, styles, service worker and icons
 bridge/           Baileys connector, normalization, media pipeline and outbox
+gmail/            Gmail OAuth, incremental sync, MIME normalization and outbox
 deploy/           container images and rootless Quadlet units
 scripts/          environment, Jev, console, browser and portfolio utilities
 test/             Node test suite
 docs/             user, architecture, deployment, privacy and API guides
 ```
 
-The root package owns tests and developer utilities. `app/` and `bridge/` have separate pinned production dependencies so their container images remain isolated.
+The root package owns tests and developer utilities. `app/`, `bridge/` and `gmail/` have separate pinned production manifests so their container images remain isolated.
 
 ## Install and verify
 
@@ -21,6 +22,7 @@ Node 24+ is required.
 ```bash
 npm --prefix app ci
 npm --prefix bridge ci
+npm --prefix gmail ci
 npm test
 ```
 
@@ -33,7 +35,7 @@ node --test test/server.test.mjs
 
 The server tests bind ephemeral localhost ports. Environments that sandbox network binding must allow loopback listening.
 
-Before a release also build both container images and check `/api/health` in a clean deployment.
+Before a release also build all three container images and check `/api/health` in a clean deployment.
 
 ## Design rules
 
@@ -80,9 +82,10 @@ Produce the normalized event described in [Architecture](ARCHITECTURE.md), plus 
 Required connector properties:
 
 - stable event IDs;
-- explicit group/contact source identity;
+- explicit connector-neutral source identity;
 - incoming/outgoing direction;
 - source discovery without storing unselected message content in the app;
+- metadata-first routing when the upstream API permits it;
 - retry without duplicate items;
 - no message sending unless a future product requirement explicitly introduces it.
 
@@ -149,8 +152,8 @@ Do not point it at production.
 ## Release checklist
 
 - `npm test` passes.
-- App and bridge images build from their lockfiles.
-- Health check and WhatsApp reconnect work.
+- App and connector images build from their lockfiles.
+- Health check, WhatsApp reconnect and Gmail checkpoint recovery work.
 - New privacy boundaries are documented.
 - New settings have safe defaults and persist.
 - Mobile, tablet and desktop layouts have no horizontal overflow.
