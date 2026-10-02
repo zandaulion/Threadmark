@@ -55,7 +55,7 @@ Before a release also build all three container images and check `/api/health` i
 2. Return the detection contract documented in [Architecture](ARCHITECTURE.md).
 3. Compose it in `detectAttention` or another explicit pipeline stage.
 4. Include Romanian/English, positive, negative and malformed-input tests.
-5. Confirm it does not cause locally matched text to be sent to Jev.
+5. Confirm it does not cause locally matched text to be sent to Jev unless it participates in a documented semantic verification step such as Gmail meeting confirmation.
 6. Add the category or UI metadata only if the existing payment/meeting/reminder taxonomy is insufficient.
 
 Detection keys must be stable per message so generated item IDs remain deterministic.

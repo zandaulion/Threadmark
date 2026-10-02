@@ -97,6 +97,7 @@ h3 { margin: 0; font-size: 1.08rem; }
 .detection-source { padding: 4px 8px; border-radius: 999px; font-weight: 800; }
 .detection-source.rule { background: var(--teal-soft); color: var(--teal); }
 .detection-source.jev { background: var(--coral-soft); color: var(--coral); }
+.detection-source.rule-jev { background: linear-gradient(90deg, var(--teal-soft), var(--coral-soft)); color: var(--ink); }
 .detection-source.review { background: #f2c14e2b; color: #80610f; }
 .priority-chip { padding: 4px 8px; border-radius: 999px; background: #f2c14e2b; color: #80610f; font-weight: 850; }
 .due-chip, .media-chip { padding: 4px 8px; border-radius: 999px; background: var(--teal-soft); color: var(--teal); font-weight: 800; }

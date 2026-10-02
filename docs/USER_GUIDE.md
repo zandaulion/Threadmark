@@ -42,7 +42,7 @@ Each card includes:
 - the detected category and title;
 - the selected group or person and the sender;
 - the message excerpt, expandable with **Show full message**;
-- the detection source: **Rule**, **Jev** or **Review**;
+- the detection source: **Rule**, **Jev**, **Rule + Jev** or **Review**;
 - confidence, due date, urgency and attachment badges when available;
 - payment warnings when details look changed, duplicated or unusual.
 
@@ -103,7 +103,7 @@ Use a semantic monitor when meaning matters more than exact words—for example 
 
 A higher threshold reduces false positives but can miss borderline messages. Start around 78–82%, review actual results and adjust gradually.
 
-Local built-in detection and phrase rules run first. Otherwise-unmatched selected-chat text is sent to TypeSafe AI when Jev is enabled. The Jev card at the top of **Rules** shows its status and expands to provide a direct sample tester.
+Local built-in detection and phrase rules run first. Otherwise-unmatched selected-source text is sent to TypeSafe AI when Jev is enabled. Local Gmail meeting candidates are also checked by Jev to reject newsletter or marketing false positives; confirmed items show **Rule + Jev**. If Jev is unavailable, Threadmark keeps the local meeting rather than silently losing it. The Jev card at the top of **Rules** shows its status and expands to provide a direct sample tester.
 
 ## Attachments and handwritten assignments
 

@@ -23,6 +23,7 @@ Gmail begins at the current mailbox checkpoint and does not import old messages.
 | WhatsApp linked-device operation | WhatsApp infrastructure | Protocol traffic required for the linked device |
 | Gmail synchronization | Google Gmail API | OAuth tokens, message IDs, labels/headers, and complete bodies only for enabled sources |
 | Jev enabled, local checks find no match | TypeSafe AI | Selected message text and batched semantic questions |
+| Jev enabled, local checks find a Gmail meeting candidate | TypeSafe AI | Selected email text and batched semantic questions used to confirm or reject the meeting |
 | Semantic rule sample test | TypeSafe AI | The sample text and monitor condition |
 | Context/reply features enabled | TypeSafe AI | Current text plus up to six recent selected-source text snippets and direction labels |
 | Web Push enabled | Browser push service | Notification title, selected source name, matched title and item URL/tag |
@@ -57,7 +58,7 @@ Limits and behavior:
 - audio: FFmpeg conversion and local whisper.cpp;
 - videos: metadata only, no content extraction;
 - original media is not stored by Threadmark;
-- extracted text can be sent to Jev under the same rule as typed selected-chat text.
+- extracted text can be sent to Jev under the same rule as typed selected-source text.
 
 If OCR cannot read an image from a monitored individual contact, Threadmark keeps only a reminder that the original photo needs review in WhatsApp.
 

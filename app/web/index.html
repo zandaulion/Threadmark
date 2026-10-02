@@ -229,7 +229,7 @@
           <textarea id="rule-condition" rows="3" maxlength="500" placeholder="Someone needs a decision or reply from me."></textarea>
           <label for="rule-threshold">Match threshold</label>
           <div class="threshold-field"><input id="rule-threshold" type="number" min="50" max="99" step="1" value="78" inputmode="numeric"><span>% probability</span></div>
-          <p class="semantic-privacy">Only otherwise-unmatched text from sources in this rule's scope is sent to TypeSafe AI. Source identities are not sent.</p>
+          <p class="semantic-privacy">Text is sent to TypeSafe AI when semantic evaluation runs, including unmatched messages and Gmail meeting candidates. Source identities are not sent.</p>
         </div>
         <label for="rule-scope">Applies to</label>
         <select id="rule-scope"><option value="all">All monitored sources</option><option value="sources">Specific monitored sources</option></select>

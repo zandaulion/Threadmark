@@ -163,6 +163,75 @@ test('invite, group selection, bridge ingestion and resolution work together', a
   assert.equal(semanticRuleEvent.items[0].priority, 0.93);
 });
 
+test('Gmail local meeting matches require Jev confirmation and fail open when Jev is unavailable', async (t) => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'threadmark-gmail-verification-'));
+  const calls = [];
+  const jev = {
+    status: () => ({ enabled: true, provider: 'TypeSafe AI', model: 'jev-test', threshold: 0.78 }),
+    async evaluate(text, monitors, options) {
+      calls.push({ text, monitors, options });
+      if (text.includes('product call')) {
+        return { ...this.status(), available: true, scores: { payment: 0.1, meeting: 0.04, reminder: 0.08 }, signals: {}, detections: [] };
+      }
+      if (text.includes('appointment')) {
+        return {
+          ...this.status(), available: true, scores: { payment: 0.02, meeting: 0.95, reminder: 0.06 }, signals: {},
+          detections: [{
+            type: 'meeting', key: 'jev-meeting', title: 'Meeting or appointment mentioned', confidence: 0.95,
+            priority: 0.1, amountMinor: null, currency: null, eventAt: null, notify: true,
+            details: { detector: 'jev', model: 'jev-test' },
+          }],
+        };
+      }
+      return { ...this.status(), available: false, error: 'jev_unavailable', scores: {}, signals: {}, detections: [] };
+    },
+  };
+  const app = createThreadmarkServer({
+    config: {
+      dataDir,
+      webDir: path.join(root, 'app/web'),
+      adminToken: 'e'.repeat(64),
+      bridgeToken: 'f'.repeat(64),
+      publicBaseUrl: 'https://threadmark.test',
+      cookieSecure: false,
+    },
+    push: { enabled: false, publicKey: '', notifyItem: async () => {} },
+    jev,
+  });
+  const source = { id: 'gmail:label:INBOX', name: 'Inbox', kind: 'gmail_label' };
+  app.store.upsertGmailSources([source]);
+  app.store.selectGmailSource(source.id, true);
+  await new Promise((resolve) => app.server.listen(0, '127.0.0.1', resolve));
+  t.after(async () => { await app.close(); fs.rmSync(dataDir, { recursive: true, force: true }); });
+  const base = `http://127.0.0.1:${app.server.address().port}`;
+  const headers = { 'x-bridge-token': 'f'.repeat(64), 'content-type': 'application/json' };
+  const send = (id, text) => fetch(`${base}/internal/events`, {
+    method: 'POST', headers,
+    body: JSON.stringify({
+      id, sourceId: source.id, sourceName: source.name, sourceKind: source.kind,
+      senderId: 'gmail:sender:example', senderName: 'Example sender', sentAt: '2026-10-02T12:00:00Z', text,
+    }),
+  }).then((response) => response.json());
+
+  const rejected = await send('gmail:marketing', 'Join our product call tomorrow to learn what is new.');
+  assert.deepEqual(rejected.items, []);
+
+  const confirmed = await send('gmail:confirmed', 'Your appointment is tomorrow at 18:30.');
+  assert.equal(confirmed.items.length, 1, 'the Jev meeting result must not duplicate the confirmed local item');
+  assert.equal(confirmed.items[0].type, 'meeting');
+  assert.equal(confirmed.items[0].detectionSource, 'rule');
+  assert.deepEqual(confirmed.items[0].details.verification, {
+    detector: 'jev', model: 'jev-test', probability: 0.95, threshold: 0.78,
+  });
+
+  const failOpen = await send('gmail:unavailable', 'Meeting tomorrow at 19:00.');
+  assert.equal(failOpen.items.length, 1);
+  assert.equal(failOpen.items[0].type, 'meeting');
+  assert.equal(failOpen.items[0].details.verification, undefined);
+  assert.equal(calls.length, 3);
+  assert.equal(calls.every((call) => call.options.includeBuiltIns === true), true);
+});
+
 test('individual contacts are discovered but ignored until explicitly selected', async (t) => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'threadmark-contact-'));
   const bridge = http.createServer((req, res) => {

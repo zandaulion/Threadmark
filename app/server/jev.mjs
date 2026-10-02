@@ -3,21 +3,21 @@ import { resolveJevDate } from './dates.mjs';
 
 const QUESTIONS = {
   payment: noul(
-    'Does the WhatsApp message in `message` contain a payment matter that the recipient should notice or act on? The message may be Romanian or English.',
+    'Does the message in `message` contain a payment matter that the recipient should notice or act on? The message may be Romanian or English.',
     {
       true: 'The recipient may need to pay, transfer, collect, confirm, record, or follow up about money, fees, dues, contributions, invoices, refunds, or bank details.',
       false: 'There is no actionable or important payment matter for the recipient.',
     },
   ),
   meeting: noul(
-    'Does the WhatsApp message in `message` establish, change, cancel, or request action about a meeting, appointment, class, call, or scheduled event? The message may be Romanian or English.',
+    'Does the message in `message` establish, change, cancel, or request action about a meeting, appointment, class, call, or scheduled event? The message may be Romanian or English.',
     {
       true: 'A date, time, location, attendance decision, cancellation, or schedule change matters to the recipient.',
       false: 'There is no concrete scheduling or attendance matter for the recipient.',
     },
   ),
   reminder: noul(
-    'Does the WhatsApp message in `message` give the recipient a non-payment, non-meeting task or deadline that they should remember? The message may be Romanian or English.',
+    'Does the message in `message` give the recipient a non-payment, non-meeting task or deadline that they should remember? The message may be Romanian or English.',
     {
       true: 'The recipient is asked or reminded to bring, submit, sign, complete, confirm, reply, or otherwise follow up on something.',
       false: 'There is no task or deadline, or the only matter is a payment or meeting already covered by another category.',
@@ -27,7 +27,7 @@ const QUESTIONS = {
 
 const SIGNAL_QUESTIONS = {
   urgency: noul(
-    'Does the WhatsApp message in `message` require prompt attention or action from the recipient today or very soon? The message may be Romanian or English.',
+    'Does the message in `message` require prompt attention or action from the recipient today or very soon? The message may be Romanian or English.',
     {
       true: 'Delay could cause a missed deadline, failed obligation, lost opportunity, safety issue, or other meaningful problem; explicit urgency or a near deadline counts.',
       false: 'The message is informational, routine, optional, or can reasonably wait without a meaningful consequence.',

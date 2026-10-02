@@ -259,13 +259,13 @@ function renderDetection() {
   const enabled = Boolean(state.detection.enabled);
   $('#jev-state').textContent = enabled ? 'Active' : 'Not configured';
   $('#jev-copy').textContent = enabled
-    ? `Local detection runs first. Unmatched selected messages are checked by ${state.detection.provider} ${state.detection.model} against built-in and enabled semantic monitors.`
+    ? `Local detection runs first. Unmatched selected messages and Gmail meeting candidates are checked by ${state.detection.provider} ${state.detection.model}.`
     : 'Local detectors and custom rules are active. Add a TypeSafe API key on the server to enable the Jev fallback.';
   $('#jev-test').hidden = !enabled;
   $('#privacy-copy').textContent = enabled
     ? state.settings.contextAware || state.settings.outgoingMonitoring
       ? 'Unselected chats never leave this server. You enabled short-lived context for selected chats; Jev receives text and direction labels, never chat identities.'
-      : 'Unselected chats never leave this server. After local checks, unmatched text from selected chats is sent to TypeSafe AI; contact and group identities are not sent.'
+      : 'Unselected sources never leave this server. After local checks, unmatched text and Gmail meeting candidates from selected sources are sent to TypeSafe AI; source identities are not sent.'
     : 'Unselected chat content is discarded after local routing. Matching excerpts stay on this server only.';
 }
 
@@ -871,10 +871,12 @@ function ruleDescription(rule) {
 }
 
 function detectionSourceBadge(item) {
-  const source = item.detectionSource === 'jev' || item.details?.detector === 'jev' ? 'jev'
+  const source = item.details?.verification?.detector === 'jev' ? 'rule-jev'
+    : item.detectionSource === 'jev' || item.details?.detector === 'jev' ? 'jev'
     : item.detectionSource === 'review' || item.details?.detector === 'review' ? 'review' : 'rule';
-  const label = source === 'jev' ? 'Jev' : source === 'review' ? 'Review' : 'Rule';
-  const description = source === 'jev' ? 'Detected by Jev' : source === 'review' ? 'Image from a monitored contact needs review' : 'Detected by local rules';
+  const label = source === 'rule-jev' ? 'Rule + Jev' : source === 'jev' ? 'Jev' : source === 'review' ? 'Review' : 'Rule';
+  const description = source === 'rule-jev' ? 'Detected locally and confirmed by Jev'
+    : source === 'jev' ? 'Detected by Jev' : source === 'review' ? 'Image from a monitored contact needs review' : 'Detected by local rules';
   return `<span class="detection-source ${source}" title="${description}" aria-label="${description}">${label}</span>`;
 }
 

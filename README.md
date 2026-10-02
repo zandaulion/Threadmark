@@ -51,7 +51,7 @@ The two connectors and app run as separate rootless Podman containers on a priva
 - Import selected contacts through the browser's privacy-preserving Contact Picker when the device supports it.
 - Romanian and English payment and meeting detectors.
 - Local custom rules with any/all phrase matching, category, chat scope, enable/disable controls, optional notifications and a sample-text tester.
-- Optional Jev semantic fallback for locally unmatched payment, meeting and reminder messages, with visible probabilities and a configurable threshold.
+- Optional Jev semantic fallback for locally unmatched payment, meeting and reminder messages, plus Gmail meeting verification to suppress newsletter and marketing false positives.
 - User-defined semantic monitors with plain-language conditions, per-monitor thresholds, chat scope, notifications and a Jev sample tester.
 - Jev urgency probability stored as a priority signal; high-urgency items rise in the feed and receive a visible badge and urgent notification title.
 - Local absolute/relative deadline extraction, due/overdue badges and downloadable calendar events.
@@ -217,7 +217,7 @@ The public/tailnet PWA route must never inject the admin token. Only the private
 - Selected messages with no detection are not retained.
 - Matched excerpts stay in the local SQLite database.
 - Custom rule and semantic-monitor definitions stay in that same local database. Phrase test samples are evaluated locally and are not saved.
-- When Jev is enabled, only the text of an otherwise-unmatched message from a selected chat is sent to TypeSafe AI. Threadmark does not send the chat name, sender name, phone number, WhatsApp ID or message ID.
+- When Jev is enabled, the text of an otherwise-unmatched message or a locally matched Gmail meeting candidate from a selected source is sent to TypeSafe AI. Threadmark does not send the source name, sender name, email address, phone number, WhatsApp ID or message ID.
 - Context-aware changes/cancellations and reply monitoring are off by default. If enabled, selected-chat text and direction labels are held locally for at most 48 hours and recent text may be sent to Jev; identities and IDs are still removed.
 - Outgoing messages are ignored unless reply monitoring is explicitly enabled.
 - Attachment reading is off by default. If enabled, selected-chat media is downloaded and decrypted by the local bridge, processed inside the container, and deleted immediately. Only extracted text follows the same local/Jev routing rules as typed text.
@@ -230,9 +230,13 @@ Back up all three data directories together with the environment file, using enc
 
 ## Jev semantic detection
 
-Threadmark always runs its deterministic detectors and local phrase rules first. If they find nothing and Jev is enabled, the app sends one request containing the message text, three independent built-in Noul questions (payment, meeting and reminder), an urgency Noul, and the applicable enabled semantic-monitor questions. Multiple questions are batched in that request. A matching custom monitor takes precedence over the generic fallback and uses its own threshold; otherwise the strongest built-in result becomes an attention item when it reaches `JEV_THRESHOLD` (default `0.78`). The urgency probability is stored separately as the item's priority; values at or above `0.78` are surfaced as urgent. API failure is fail-open: WhatsApp ingestion continues and local detection remains available.
+Threadmark always runs its deterministic detectors and local phrase rules first. If they find nothing and Jev is enabled, the app sends one request containing the message text, three independent built-in Noul questions (payment, meeting and reminder), an urgency Noul, and the applicable enabled semantic-monitor questions. Multiple questions are batched in that request. A matching custom monitor takes precedence over the generic fallback and uses its own threshold; otherwise the strongest built-in result becomes an attention item when it reaches `JEV_THRESHOLD` (default `0.78`).
 
-Urgency and deadline enrichment do not expand the default privacy boundary: messages handled entirely by local detectors or phrase rules are not sent to Jev solely to obtain those signals. Enabling context-aware or reply monitoring explicitly expands the Jev input to recent selected-chat text as described in the PWA.
+Gmail meeting candidates are the narrow exception to the local-first short circuit. Marketing email often combines words such as “call” with dates or times, so a local Gmail meeting match is sent through the same Jev questions. The local meeting is kept only when Jev's meeting probability reaches `JEV_THRESHOLD`; confirmed cards show **Rule + Jev**. An alternate Jev category may still be emitted when it reaches the threshold. If Jev is unavailable or omits the meeting score, Threadmark fails open and keeps the local meeting. WhatsApp local matches retain their existing on-machine-only behavior.
+
+The urgency probability is stored separately as the item's priority; values at or above `0.78` are surfaced as urgent. API failure is fail-open: ingestion continues and the local layer remains available.
+
+Urgency and deadline enrichment do not otherwise expand the default privacy boundary: apart from Gmail meeting verification, messages handled entirely by local detectors or phrase rules are not sent to Jev solely to obtain those signals. Enabling context-aware or reply monitoring explicitly expands the Jev input to recent selected-source text as described in the PWA.
 
 Configure the API key without placing it in shell history or the browser:
 

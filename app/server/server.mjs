@@ -123,10 +123,12 @@ export function createThreadmarkServer(options = {}) {
             return json(res, 200, { accepted: true, outgoing: true, items: [], updatedItems: updates });
           }
           const localDetections = store.detectMessage(body);
+          const verifyGmailMeeting = isGmailSource(selection.source)
+            && localDetections.some((detection) => detection.type === 'meeting');
           const context = settings.contextAware || settings.outgoingMonitoring ? store.recentContext(body) : [];
-          const shouldUseJev = !localDetections.length || settings.contextAware || settings.outgoingMonitoring;
+          const shouldUseJev = !localDetections.length || verifyGmailMeeting || settings.contextAware || settings.outgoingMonitoring;
           const analysis = shouldUseJev ? await jev.evaluate(body.text, store.applicableSemanticRules(body), {
-            includeBuiltIns: !localDetections.length,
+            includeBuiltIns: !localDetections.length || verifyGmailMeeting,
             contextAware: settings.contextAware,
             replyNeeded: settings.outgoingMonitoring,
             paymentSafety: true,
@@ -134,7 +136,11 @@ export function createThreadmarkServer(options = {}) {
             referenceAt: body.sentAt,
             context,
           }) : { available: false, detections: [], signals: {} };
-          let detections = [...localDetections, ...(analysis.detections || [])];
+          const verifiedLocal = verifyGmailMeetingDetections(localDetections, analysis, config.jevThreshold, verifyGmailMeeting);
+          const semanticDetections = verifyGmailMeeting
+            ? (analysis.detections || []).filter((detection) => detection.key !== 'jev-meeting')
+            : (analysis.detections || []);
+          let detections = [...verifiedLocal, ...semanticDetections];
           if (analysis.signals?.replyNeeded >= 0.82 && !detections.some((item) => item.type === 'reminder')) {
             const dueAt = new Date(new Date(body.sentAt || Date.now()).valueOf() + settings.replyDelayHours * 3_600_000).toISOString();
             detections.push({
@@ -517,4 +523,29 @@ function sameOrigin(req) {
   if (!req.headers.origin) return true;
   try { return new URL(req.headers.origin).host === req.headers.host; }
   catch { return false; }
+}
+
+function isGmailSource(source) {
+  return source && ['gmail_label', 'gmail_sender'].includes(source.kind);
+}
+
+function verifyGmailMeetingDetections(localDetections, analysis, fallbackThreshold, shouldVerify) {
+  if (!shouldVerify || !analysis?.available) return localDetections;
+  const probability = Number(analysis.scores?.meeting);
+  if (!Number.isFinite(probability)) return localDetections;
+  const configuredThreshold = Number(analysis.threshold);
+  const threshold = Number.isFinite(configuredThreshold) ? configuredThreshold : fallbackThreshold;
+  if (probability < threshold) return localDetections.filter((detection) => detection.type !== 'meeting');
+  return localDetections.map((detection) => detection.type !== 'meeting' ? detection : {
+    ...detection,
+    details: {
+      ...(detection.details || {}),
+      verification: {
+        detector: 'jev',
+        model: analysis.model || null,
+        probability,
+        threshold,
+      },
+    },
+  });
 }
