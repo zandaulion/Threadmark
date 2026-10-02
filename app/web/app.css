@@ -106,6 +106,12 @@ h3 { margin: 0; font-size: 1.08rem; }
 .media-chip.review { background: #f2c14e2b; color: #80610f; }
 .confidence { background: #1118270b; border-radius: 999px; padding: 4px 8px; }
 .done-button { border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 999px; min-height: 38px; padding: 0 13px; font-weight: 750; white-space: nowrap; }
+.item-action-strip { display: flex; align-items: flex-start; justify-self: end; gap: 7px; }
+.quick-done { min-height: 38px; display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--ink); border-radius: 999px; padding: 0 14px; background: var(--ink); color: var(--surface); font-size: .78rem; font-weight: 850; white-space: nowrap; cursor: pointer; }
+.quick-done span { font-size: .9rem; line-height: 1; }
+.quick-done:hover { background: var(--teal); border-color: var(--teal); }
+.quick-done:focus-visible { outline: 3px solid #277c6f3d; outline-offset: 2px; }
+.quick-done:disabled { opacity: .55; cursor: wait; }
 .safety-notice { display: grid; gap: 3px; margin: 10px 0; padding: 10px 12px; border-left: 4px solid var(--coral); border-radius: 8px; background: var(--coral-soft); color: #873524; font-size: .78rem; }
 .item-actions { position: relative; justify-self: end; }
 .attention-item:has(.item-actions[open]) { position: relative; z-index: 14; }
@@ -273,9 +279,12 @@ input:focus, select:focus, textarea:focus { border-color: var(--teal); box-shado
   .feed-controls { align-self: flex-start; }
   .status-tab { min-height: 30px; padding: 0 9px; font-size: .7rem; }
   .attention-item { grid-template-columns: 42px minmax(0, 1fr); padding: 18px 0; }
-  .done-button, .item-actions { grid-column: 2; justify-self: start; }
-  .item-actions { width: 100%; }
-  .item-actions summary { width: max-content; min-height: 42px; }
+  .done-button, .item-action-strip { grid-column: 2; justify-self: start; }
+  .item-action-strip { width: 100%; flex-wrap: wrap; }
+  .quick-done, .item-actions summary { min-height: 44px; }
+  .item-actions { width: auto; }
+  .item-actions[open] { flex-basis: 100%; }
+  .item-actions summary { width: max-content; }
   .item-action-menu {
     position: static;
     width: 100%;

@@ -959,15 +959,16 @@ function itemActions(item) {
   const contactNumber = item.source?.kind === 'contact' ? String(item.source.id || '').match(/^(\d+)@s\.whatsapp\.net$/u)?.[1] : '';
   const whatsapp = item.details?.needsReview && contactNumber ? `<a class="menu-action" href="https://wa.me/${contactNumber}" target="_blank" rel="noopener">Open WhatsApp chat</a>` : '';
   const gmail = item.source?.kind?.startsWith('gmail_') && item.externalUrl ? `<a class="menu-action" href="${escapeHtml(item.externalUrl)}" target="_blank" rel="noopener">Open in Gmail</a>` : '';
-  return `<details class="item-actions"><summary>Actions</summary><div class="item-action-menu">
-    <button type="button" data-action="done" data-id="${escapeHtml(item.id)}">Mark done</button>
+  return `<div class="item-action-strip">
+    <button class="quick-done" type="button" data-action="done" data-id="${escapeHtml(item.id)}" aria-label="Mark ${escapeHtml(item.title)} as done" title="Mark done"><span aria-hidden="true">✓</span> Done</button>
+    <details class="item-actions"><summary>Actions</summary><div class="item-action-menu">
     ${whatsapp}${gmail}
     <button type="button" data-action="snooze" data-hours="1" data-id="${escapeHtml(item.id)}">Snooze 1 hour</button>
     <button type="button" data-action="snooze" data-hours="24" data-id="${escapeHtml(item.id)}">Snooze 1 day</button>
     ${calendar}<button type="button" data-action="useful" data-id="${escapeHtml(item.id)}">This was useful</button>
     <button type="button" data-action="not_relevant" data-id="${escapeHtml(item.id)}">Not relevant</button>
     <span class="menu-label">Move to</span>${['payment', 'meeting', 'reminder'].filter((category) => category !== item.type).map((category) => `<button type="button" data-action="category" data-category="${category}" data-id="${escapeHtml(item.id)}">${categoryLabel(category)}</button>`).join('')}
-  </div></details>`;
+  </div></details></div>`;
 }
 
 function readableError(code) {
