@@ -40,17 +40,41 @@ self.addEventListener('push', (event) => {
     icon: data.icon || '/icons/icon-192.png',
     badge: data.badge || '/icons/icon-192.png',
     tag: data.tag,
-    data: { url: data.url },
+    actions: Array.isArray(data.actions) ? data.actions.slice(0, 2) : [],
+    data: { url: data.url, actionsUrl: data.actionsUrl, itemId: data.itemId },
   }));
 });
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   event.waitUntil((async () => {
-    const target = new URL(event.notification.data?.url || '/', self.location.origin).href;
-    const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-    const existing = windows.find((client) => client.url.startsWith(self.location.origin));
-    if (existing) { await existing.focus(); return existing.navigate(target); }
-    return self.clients.openWindow(target);
+    const data = event.notification.data || {};
+    const fallback = new URL(data.url || '/', self.location.origin).href;
+    if (event.action === 'done' && data.itemId) {
+      try {
+        const response = await fetch(`/api/items/${encodeURIComponent(data.itemId)}/status`, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ status: 'done' }),
+        });
+        if (response.ok) return;
+      } catch {}
+      return focusOrOpen(fallback);
+    }
+    const target = event.action === 'actions'
+      ? new URL(data.actionsUrl || data.url || '/', self.location.origin).href
+      : fallback;
+    return focusOrOpen(target);
   })());
 });
+
+async function focusOrOpen(target) {
+  const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+  const existing = windows.find((client) => client.url.startsWith(self.location.origin));
+  if (existing) {
+    await existing.focus();
+    return existing.navigate(target);
+  }
+  return self.clients.openWindow(target);
+}

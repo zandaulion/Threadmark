@@ -124,6 +124,8 @@ The browser opens `/api/stream` and listens for item, source, rule, bridge and s
 
 Mobile operating systems commonly suspend an installed PWA and its SSE connection in the background without delivering a clean disconnect. On `visibilitychange`, `pageshow` or window focus, an authenticated foreground page therefore reloads `/api/summary` and its current `/api/feed` view. Returning from a hidden or restored page also replaces the stream. Closely grouped lifecycle events share one in-flight refresh and are throttled for 750 milliseconds.
 
+Item push payloads include up to two Web Notification actions. The service worker handles **Done** with an authenticated same-origin status request and leaves the app closed on success; a failure falls back to opening the item. **Actions** opens an item-scoped fragment, after which the PWA scrolls to the matching card and expands its in-flow action menu. Platforms that do not expose notification actions retain the normal notification tap behavior.
+
 The service worker caches only the application shell. API and internal routes are network-only and never cached. Static assets are network-first so deployments update promptly; the `/bust` recovery page clears stale cache state.
 
 ## Extension points

@@ -12,6 +12,9 @@ test('push notifications use the Threadmark app icon', () => {
   assert.equal(payload.icon, '/icons/icon-192.png');
   assert.equal(payload.badge, '/icons/icon-192.png');
   assert.equal(payload.title, 'Reminder matched');
+  assert.equal(payload.itemId, 'message:item');
+  assert.equal(payload.actionsUrl, '/#item=message%3Aitem&actions=1');
+  assert.deepEqual(payload.actions, [{ action: 'done', title: 'Done' }, { action: 'actions', title: 'Actions' }]);
 });
 
 test('urgent items are identified in the notification title', () => {

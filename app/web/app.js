@@ -160,6 +160,23 @@ function renderFeed() {
       </div>
       ${itemActions(item)}
     </article>`).join('');
+  requestAnimationFrame(handleItemDeepLink);
+}
+
+function handleItemDeepLink() {
+  const params = new URLSearchParams(location.hash.replace(/^#/u, ''));
+  const itemId = params.get('item');
+  if (!itemId) return;
+  const article = [...feed.querySelectorAll('.attention-item')].find((item) => item.dataset.itemId === itemId);
+  if (!article) return;
+  if (params.get('actions') === '1') {
+    const actions = article.querySelector('.item-actions');
+    if (actions) actions.open = true;
+  }
+  article.classList.add('deep-link-target');
+  article.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  setTimeout(() => article.classList.remove('deep-link-target'), 2400);
+  history.replaceState(null, '', `${location.pathname}${location.search}`);
 }
 
 function renderSettings() {
@@ -335,6 +352,8 @@ window.addEventListener('pageshow', (event) => {
 window.addEventListener('focus', () => {
   void refreshOnForeground();
 });
+
+window.addEventListener('hashchange', () => requestAnimationFrame(handleItemDeepLink));
 
 $('#invite-form').addEventListener('submit', async (event) => {
   event.preventDefault();

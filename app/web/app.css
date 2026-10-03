@@ -83,6 +83,7 @@ h3 { margin: 0; font-size: 1.08rem; }
 .tab.active { color: var(--ink); border-bottom-color: var(--coral); }
 .feed { min-height: 240px; }
 .attention-item { display: grid; grid-template-columns: 46px minmax(0, 1fr) auto; gap: 15px; align-items: start; padding: 21px 4px; border-bottom: 1px solid var(--line); }
+.attention-item.deep-link-target { border-radius: 14px; background: color-mix(in srgb, var(--teal-soft) 62%, transparent); box-shadow: 0 0 0 5px color-mix(in srgb, var(--teal-soft) 38%, transparent); }
 .item-kind { width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center; font-size: 1.1rem; font-weight: 900; }
 .item-kind.payment { background: var(--coral-soft); color: #9b3c27; font-size: .68rem; letter-spacing: -.02em; }
 .item-kind.meeting { background: var(--teal-soft); color: var(--teal); }

@@ -63,7 +63,7 @@ The two connectors and app run as separate rootless Podman containers on a priva
 - Optional local image/PDF OCR and multilingual voice-note transcription with Tesseract, Poppler and whisper.cpp inside the bridge container.
 - Source excerpts, confidence, group or person, sender and detected details.
 - Mark done/reopen data model, live updates through SSE, and automatic feed/counter reconciliation whenever the PWA returns to the foreground.
-- Optional Web Push notifications.
+- Optional Web Push notifications with supported-platform Done and Actions buttons.
 - Network-first PWA shell with automatic safe updates and `/bust` recovery.
 - Rootless Podman Quadlet deployment and `podman compose` support.
 

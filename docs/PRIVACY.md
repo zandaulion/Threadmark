@@ -26,7 +26,7 @@ Gmail begins at the current mailbox checkpoint and does not import old messages.
 | Jev enabled, local checks find a Gmail meeting candidate | TypeSafe AI | Selected email text and batched semantic questions used to confirm or reject the meeting |
 | Semantic rule sample test | TypeSafe AI | The sample text and monitor condition |
 | Context/reply features enabled | TypeSafe AI | Current text plus up to six recent selected-source text snippets and direction labels |
-| Web Push enabled | Browser push service | Notification title, selected source name, matched title and item URL/tag |
+| Web Push enabled | Browser push service | Notification title, selected source name, matched title, item URL/tag/identifier and Done/Actions metadata |
 
 Threadmark does not intentionally send TypeSafe AI the chat name, sender name, phone number, WhatsApp source ID or message ID. Jev provider-side handling and retention are governed by TypeSafe's terms and configuration, not by the local Threadmark database.
 

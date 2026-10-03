@@ -72,7 +72,7 @@ Choose **Enable alerts** and approve the browser permission. Notifications requi
 - an operating system that allows notifications for that browser;
 - a rule or detector with alerts enabled.
 
-Threadmark sends notifications for newly matched items and due or expired snoozes. Urgent detections use an urgent title. The app icon is used as both notification icon and badge.
+Threadmark sends notifications for newly matched items and due or expired snoozes. Urgent detections use an urgent title. The app icon is used as both notification icon and badge. On platforms that support Web Notification actions, **Done** completes the item directly from the notification and **Actions** opens the matching card with its action menu expanded. If direct completion fails, Threadmark opens the item instead.
 
 The optional daily digest is configured under **Settings**. It reports the number of open payments, meetings and reminders at the selected local time.
 
