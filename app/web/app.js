@@ -375,13 +375,17 @@ $('#invite-form').addEventListener('submit', async (event) => {
 });
 
 feed.addEventListener('click', async (event) => {
+  const message = event.target.closest('.item-text');
+  const messageArticle = message?.closest('.attention-item');
+  if (messageArticle?.classList.contains('message-expanded')) {
+    setMessageExpanded(messageArticle, false, { returnToCard: true });
+    return;
+  }
   const button = event.target.closest('[data-action]');
   if (!button) return;
   if (button.dataset.action === 'toggle-message') {
     const article = button.closest('.attention-item');
-    const expanded = article?.classList.toggle('message-expanded') || false;
-    button.textContent = expanded ? 'Collapse message' : 'Show full message';
-    button.setAttribute('aria-expanded', String(expanded));
+    setMessageExpanded(article, !article?.classList.contains('message-expanded'));
     return;
   }
   button.disabled = true;
@@ -404,6 +408,22 @@ feed.addEventListener('click', async (event) => {
     await refreshFeedAndSummary();
   } catch (error) { showToast(error.message); button.disabled = false; }
 });
+
+function setMessageExpanded(article, expanded, { returnToCard = false } = {}) {
+  if (!article) return;
+  article.classList.toggle('message-expanded', expanded);
+  const toggle = article.querySelector('[data-action="toggle-message"]');
+  if (toggle) {
+    toggle.textContent = expanded ? 'Collapse message' : 'Show full message';
+    toggle.setAttribute('aria-expanded', String(expanded));
+  }
+  const message = article.querySelector('.item-text');
+  if (message) {
+    if (expanded) message.setAttribute('title', 'Tap message to collapse');
+    else message.removeAttribute('title');
+  }
+  if (!expanded && returnToCard) article.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
 
 $$('.tab').forEach((tab) => tab.addEventListener('click', async () => {
   state.filter = tab.dataset.filter;

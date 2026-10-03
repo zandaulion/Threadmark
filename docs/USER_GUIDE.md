@@ -43,7 +43,7 @@ Each card includes:
 
 - the detected category and title;
 - the selected group or person and the sender;
-- the message excerpt, expandable with **Show full message**;
+- the message excerpt, expandable with **Show full message**; tap the expanded message body to collapse it again;
 - the detection source: **Rule**, **Jev**, **Rule + Jev** or **Review**;
 - confidence, due date, urgency and attachment badges when available;
 - payment warnings when details look changed, duplicated or unusual.
