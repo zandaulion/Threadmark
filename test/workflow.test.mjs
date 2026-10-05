@@ -45,8 +45,9 @@ test('workflow preferences, feedback, snoozing, reply completion and payment war
       type: 'reminder', key: 'reply', title: 'Reply requested', confidence: 0.9, eventAt: '2026-10-01T16:00:00Z', notify: true,
       details: { detector: 'jev', awaitingReply: true }, amountMinor: null, currency: null,
     }], { includeLocal: false });
-    store.recordContextMessage({ id: 'context-in', groupId: sourceId, groupName: 'Family', direction: 'incoming', sentAt: '2026-10-01T12:00:00Z', text: 'Can you confirm?' });
-    const completed = store.markSourceReplied({ id: 'context-out', groupId: sourceId, groupName: 'Family', direction: 'outgoing', sentAt: '2026-10-01T12:30:00Z', text: 'Yes.' });
+    const contextAt = new Date().toISOString();
+    store.recordContextMessage({ id: 'context-in', groupId: sourceId, groupName: 'Family', direction: 'incoming', sentAt: contextAt, text: 'Can you confirm?' });
+    const completed = store.markSourceReplied({ id: 'context-out', groupId: sourceId, groupName: 'Family', direction: 'outgoing', sentAt: contextAt, text: 'Yes.' });
     assert.equal(completed.find((item) => item.id === reply.items[0].id).status, 'done');
     assert.equal(store.recentContext({ groupId: sourceId }).length, 1);
 
@@ -57,6 +58,47 @@ test('workflow preferences, feedback, snoozing, reply completion and payment war
     }], { includeLocal: false });
     store.markNotified(nearDue.items[0].id);
     assert.equal(store.dueNotifications().some((item) => item.id === nearDue.items[0].id), false, 'a near-term item must not repeat after its initial notification');
+  } finally {
+    db.close();
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('feeds use status-appropriate ordering', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'threadmark-feed-order-'));
+  const db = openDatabase(directory);
+  try {
+    const store = new ThreadmarkStore(db);
+    const sourceId = '120363000000000222@g.us';
+    store.upsertGroups([{ id: sourceId, name: 'Ordering', participantCount: 2 }]);
+    store.selectGroup(sourceId, true);
+    const add = (id, priority = null) => store.ingestMessage({
+      id, groupId: sourceId, groupName: 'Ordering', senderName: 'Sample Sender', sentAt: '2026-10-01T10:00:00Z', text: id,
+    }, [{
+      type: 'reminder', key: 'test', title: id, confidence: 0.9, priority,
+      eventAt: null, notify: true, details: { detector: 'test' }, amountMinor: null, currency: null,
+    }], { includeLocal: false }).items[0];
+
+    const doneUrgent = add('done-urgent-old', 0.95);
+    const doneRecent = add('done-recent', null);
+    store.setItemStatus(doneUrgent.id, 'done');
+    store.setItemStatus(doneRecent.id, 'done');
+    db.prepare('UPDATE attention_items SET resolved_at=? WHERE id=?').run('2026-10-01T10:00:00.000Z', doneUrgent.id);
+    db.prepare('UPDATE attention_items SET resolved_at=? WHERE id=?').run('2026-10-02T10:00:00.000Z', doneRecent.id);
+    assert.deepEqual(store.listItems({ status: 'done' }).map((item) => item.id), [doneRecent.id, doneUrgent.id]);
+
+    const openRecent = add('open-recent', null);
+    const openUrgent = add('open-urgent', 0.95);
+    assert.equal(store.listItems({ status: 'open' })[0].id, openUrgent.id);
+    assert.ok(store.listItems({ status: 'open' }).some((item) => item.id === openRecent.id));
+
+    const snoozedLater = add('snoozed-later-urgent', 0.95);
+    const snoozedSooner = add('snoozed-sooner', null);
+    const later = new Date(Date.now() + 2 * 3_600_000).toISOString();
+    const sooner = new Date(Date.now() + 3_600_000).toISOString();
+    store.snoozeItem(snoozedLater.id, later);
+    store.snoozeItem(snoozedSooner.id, sooner);
+    assert.deepEqual(store.listItems({ status: 'snoozed' }).map((item) => item.id), [snoozedSooner.id, snoozedLater.id]);
   } finally {
     db.close();
     fs.rmSync(directory, { recursive: true, force: true });

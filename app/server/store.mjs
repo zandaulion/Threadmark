@@ -518,8 +518,13 @@ export class ThreadmarkStore {
     if (type !== 'all') { clauses.push('a.type=?'); values.push(type); }
     values.push(Math.min(Math.max(Number(limit) || 100, 1), 200));
     const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
+    const orderBy = status === 'done'
+      ? 'a.resolved_at DESC, a.created_at DESC'
+      : status === 'snoozed'
+        ? 'a.snoozed_until ASC, a.created_at DESC'
+        : 'CASE WHEN COALESCE(a.priority, 0)>=0.78 THEN 1 ELSE 0 END DESC, a.created_at DESC';
     return this.db.prepare(`${itemSelect()} ${where}
-      ORDER BY CASE WHEN COALESCE(a.priority, 0)>=0.78 THEN 1 ELSE 0 END DESC, a.created_at DESC LIMIT ?`).all(...values).map(publicItem);
+      ORDER BY ${orderBy} LIMIT ?`).all(...values).map(publicItem);
   }
 
   itemById(id) {
