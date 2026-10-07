@@ -283,13 +283,13 @@ function renderDetection() {
   const enabled = Boolean(state.detection.enabled);
   $('#jev-state').textContent = enabled ? 'Active' : 'Not configured';
   $('#jev-copy').textContent = enabled
-    ? `Local detection runs first. Unmatched selected messages and Gmail meeting candidates are checked by ${state.detection.provider} ${state.detection.model}. Invoice judgments use a ${Math.round((state.detection.invoiceThreshold || .68) * 100)}% threshold.`
+    ? `Local detection runs first. ${state.detection.provider} ${state.detection.model} checks unmatched messages and verifies Gmail meetings. Alert candidates also receive promotional, obligation and transactional scores in shadow mode; these scores do not hide alerts. Invoice judgments use a ${Math.round((state.detection.invoiceThreshold || .68) * 100)}% threshold.`
     : 'Local detectors and custom rules are active. Add a TypeSafe API key on the server to enable the Jev fallback.';
   $('#jev-test').hidden = !enabled;
   $('#privacy-copy').textContent = enabled
     ? state.settings.contextAware || state.settings.outgoingMonitoring
-      ? 'Unselected chats never leave this server. You enabled short-lived context for selected chats; Jev receives text and direction labels, never chat identities.'
-      : 'Unselected sources never leave this server. After local checks, unmatched text and Gmail meeting candidates from selected sources are sent to TypeSafe AI; source identities are not sent.'
+      ? 'Unselected chats never leave this server. Selected alert candidates receive Jev shadow scores, and you enabled short-lived context for selected chats; Jev receives text and direction labels, never chat identities.'
+      : 'Unselected sources never leave this server. Selected alert candidates and unmatched text are sent to TypeSafe AI for detection and shadow triage; source identities are not sent.'
     : 'Unselected chat content is discarded after local routing. Matching excerpts stay on this server only.';
 }
 

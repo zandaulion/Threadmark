@@ -22,6 +22,8 @@ export function normalizeGmailMessage(message, source) {
   const body = cleanEmailText(extractBody(message.payload));
   const text = `${subject}${body ? `\n\n${body}` : ''}`.slice(0, 65_536);
   const internalDate = Number(message.internalDate);
+  const precedence = String(headers.precedence || '').trim().toLocaleLowerCase();
+  const autoSubmitted = String(headers['auto-submitted'] || '').trim().toLocaleLowerCase();
   return {
     id: `gmail:${message.id}`,
     sourceId: source.id,
@@ -32,6 +34,12 @@ export function normalizeGmailMessage(message, source) {
     sentAt: Number.isFinite(internalDate) ? new Date(internalDate).toISOString() : new Date().toISOString(),
     text,
     direction: 'incoming',
+    classificationHints: {
+      categoryPromotions: Array.isArray(message.labelIds) && message.labelIds.includes('CATEGORY_PROMOTIONS'),
+      hasListUnsubscribe: Boolean(String(headers['list-unsubscribe'] || '').trim()),
+      precedenceBulk: ['bulk', 'list', 'junk'].includes(precedence),
+      autoSubmitted: Boolean(autoSubmitted && autoSubmitted !== 'no'),
+    },
     externalUrl: `https://mail.google.com/mail/u/0/#all/${encodeURIComponent(message.threadId || message.id)}`,
   };
 }

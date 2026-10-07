@@ -17,6 +17,9 @@ test('Jev receives message text without WhatsApp identity metadata', async () =>
           reminder: { type: 'noul', noul: 0.67 },
           invoice: { type: 'noul', noul: 0.08 },
           urgency: { type: 'noul', noul: 0.88 },
+          promotional: { type: 'noul', noul: 0.06 },
+          personal_obligation: { type: 'noul', noul: 0.93 },
+          transactional: { type: 'noul', noul: 0.89 },
         },
         usage: { input_tokens: 100, output_tokens: 10 },
       };
@@ -26,13 +29,16 @@ test('Jev receives message text without WhatsApp identity metadata', async () =>
   const result = await detector.evaluate('Trebuie achitată contribuția pentru excursie.');
   assert.deepEqual(request.state, { message: 'Trebuie achitată contribuția pentru excursie.' });
   assert.equal(Object.keys(request.state).length, 1);
-  assert.equal(Object.keys(request.questions).length, 5);
+  assert.equal(Object.keys(request.questions).length, 8);
   assert.deepEqual(options, { timeout: 3_000, retry: { maxRetries: 0 } });
   assert.equal(result.detections.length, 1);
   assert.equal(result.detections[0].type, 'payment');
   assert.equal(result.detections[0].confidence, 0.91);
   assert.equal(result.detections[0].priority, 0.88);
   assert.equal(result.signals.urgency, 0.88);
+  assert.equal(result.signals.promotional, 0.06);
+  assert.equal(result.signals.personalObligation, 0.93);
+  assert.equal(result.signals.transactional, 0.89);
   assert.deepEqual(result.detections[0].details.scores, { payment: 0.91, meeting: 0.12, reminder: 0.67 });
 });
 
@@ -90,6 +96,9 @@ test('Jev batches semantic monitors and applies each monitor threshold', async (
         meeting: { type: 'noul', noul: 0.2 },
         reminder: { type: 'noul', noul: 0.4 },
         urgency: { type: 'noul', noul: 0.86 },
+        promotional: { type: 'noul', noul: 0.08 },
+        personal_obligation: { type: 'noul', noul: 0.91 },
+        transactional: { type: 'noul', noul: 0.72 },
         monitor_0: { type: 'noul', noul: 0.92 },
         monitor_1: { type: 'noul', noul: 0.74 },
       },
@@ -101,7 +110,7 @@ test('Jev batches semantic monitors and applies each monitor threshold', async (
     { id: 'transport', kind: 'semantic', name: 'School transport', condition: 'The school transport plan changed.', category: 'meeting', threshold: 0.75, notify: false },
   ];
   const result = await detector.evaluate('Tu ce variantă alegi pentru transport?', monitors);
-  assert.equal(Object.keys(request.questions).length, 7);
+  assert.equal(Object.keys(request.questions).length, 10);
   assert.equal(request.questions.monitor_0.instructions.monitoring_condition, monitors[0].condition);
   assert.equal(result.monitorScores.decision, 0.92);
   assert.equal(result.monitorScores.transport, 0.74);
@@ -133,7 +142,7 @@ test('Jev is disabled without server-side configuration', async () => {
   assert.equal(detector.status().enabled, false);
 });
 
-test('Jev receives only text and direction labels when context is explicitly enabled', async () => {
+test('Jev receives only safe channel hints plus text and direction labels when context is explicitly enabled', async () => {
   let request;
   const answer = (choiceValue, confidence = 0.95) => ({ type: 'choice', choice: choiceValue, confidence, probabilities: { [choiceValue]: 1 } });
   const client = { async systemOne(nextRequest) {
@@ -153,10 +162,18 @@ test('Jev receives only text and direction labels when context is explicitly ena
   const result = await detector.evaluate('Actually, tomorrow at 18:30.', [], {
     includeBuiltIns: false, contextAware: true, replyNeeded: true, paymentSafety: true, extractDate: true,
     referenceAt: '2026-10-01T10:00:00+03:00',
+    messageContext: {
+      channel: 'gmail', conversationKind: 'mailbox', senderEmail: 'private@example.test',
+      gmailHints: { categoryPromotions: true, hasListUnsubscribe: true, precedenceBulk: false, autoSubmitted: true },
+    },
     context: [{ direction: 'incoming', text: 'Meeting Friday at 17:00', sourceName: 'Private name', sourceId: 'secret@g.us' }],
   });
   assert.deepEqual(request.state, {
     message: 'Actually, tomorrow at 18:30.',
+    message_context: {
+      channel: 'gmail', conversation_kind: 'mailbox',
+      gmail_hints: { category_promotions: true, has_list_unsubscribe: true, precedence_bulk: false, auto_submitted: true },
+    },
     recent_messages: [{ direction: 'incoming', text: 'Meeting Friday at 17:00' }],
   });
   assert.equal(result.signals.changesPrevious, 0.91);

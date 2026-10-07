@@ -38,7 +38,13 @@ test('invite, group selection, bridge ingestion and resolution work together', a
         priority: 0.89, amountMinor: null, currency: null, eventAt: null, notify: true,
         details: { detector: 'jev', model: 'jev-test', scores: { payment: 0.1, meeting: 0.2, reminder: 0.9 } },
       }];
-      return { ...this.status(), available: true, scores: {}, signals: {}, detections };
+      const attentionSignals = text.startsWith('Plata este 75 lei')
+        ? { promotional: 0.96, personalObligation: 0.08, transactional: 0.11 }
+        : { promotional: 0.12, personalObligation: 0.94, transactional: 0.88 };
+      return {
+        ...this.status(), available: true, scores: {},
+        signals: attentionSignals, detections,
+      };
     },
     async evaluateMonitor(text, monitor) {
       return { ...this.status(), available: true, matched: text.includes('confirm'), probability: 0.91, threshold: monitor.threshold, detections: [] };
@@ -90,7 +96,10 @@ test('invite, group selection, bridge ingestion and resolution work together', a
   assert.equal(eventResponse.status, 200);
   const event = await eventResponse.json();
   assert.equal(event.items.length, 1);
-  assert.equal(jevCalls, 0, 'local detections must not send text to Jev');
+  assert.equal(jevCalls, 1, 'local detections are semantically scored in shadow mode');
+  assert.deepEqual(event.items[0].details.attentionTriage, {
+    mode: 'shadow', promotional: 0.96, personalObligation: 0.08, transactional: 0.11, model: 'jev-test',
+  });
 
   const feed = await fetch(`${base}/api/feed`, { headers: { cookie } }).then((response) => response.json());
   assert.equal(feed.items.length, 1);
@@ -109,7 +118,7 @@ test('invite, group selection, bridge ingestion and resolution work together', a
     method: 'POST', headers: { 'x-bridge-token': 'b'.repeat(64), 'content-type': 'application/json' },
     body: JSON.stringify({ id: 'wamid-jev', groupId, groupName: 'Parents', senderId: '15550100003@s.whatsapp.net', senderName: 'Sample Sender', sentAt: '2026-10-01T12:30:00Z', text: 'Vă rog să aduceți acordul semnat.' }),
   }).then((response) => response.json());
-  assert.equal(jevCalls, 1);
+  assert.equal(jevCalls, 2);
   assert.equal(semanticEvent.items[0].type, 'reminder');
   assert.equal(semanticEvent.items[0].details.detector, 'jev');
   assert.equal(semanticEvent.items[0].detectionSource, 'jev');
@@ -157,7 +166,7 @@ test('invite, group selection, bridge ingestion and resolution work together', a
     method: 'POST', headers: { 'x-bridge-token': 'b'.repeat(64), 'content-type': 'application/json' },
     body: JSON.stringify({ id: 'wamid-semantic-rule', groupId, groupName: 'Parents', senderId: '15550100003@s.whatsapp.net', senderName: 'Sample Sender', sentAt: '2026-10-01T13:30:00Z', text: 'Which transport option do you choose?' }),
   }).then((response) => response.json());
-  assert.equal(jevCalls, 2);
+  assert.equal(jevCalls, 4);
   assert.equal(semanticRuleEvent.items[0].title, 'Decision needed');
   assert.equal(semanticRuleEvent.items[0].details.monitorId, semanticRule.id);
   assert.equal(semanticRuleEvent.items[0].priority, 0.93);
@@ -168,7 +177,13 @@ test('concrete invoices are detected locally for WhatsApp and Gmail', async (t) 
   let jevCalls = 0;
   const jev = {
     status: () => ({ enabled: true, provider: 'TypeSafe AI', model: 'jev-test', threshold: 0.78, invoiceThreshold: 0.68 }),
-    async evaluate() { jevCalls += 1; return { available: true, scores: {}, signals: {}, detections: [] }; },
+    async evaluate() {
+      jevCalls += 1;
+      return {
+        ...this.status(), available: true, scores: {},
+        signals: { promotional: 0.04, personalObligation: 0.91, transactional: 0.96 }, detections: [],
+      };
+    },
   };
   const app = createThreadmarkServer({
     config: {
@@ -215,10 +230,13 @@ test('concrete invoices are detected locally for WhatsApp and Gmail', async (t) 
     assert.equal(result.items[0].type, 'payment');
     assert.equal(result.items[0].title, 'Invoice needs attention');
     assert.equal(result.items[0].details.invoice, true);
+    assert.deepEqual(result.items[0].details.attentionTriage, {
+      mode: 'shadow', promotional: 0.04, personalObligation: 0.91, transactional: 0.96, model: 'jev-test',
+    });
     assert.equal(result.items[0].notify, true);
     assert.equal(result.items[0].detectionSource, 'rule');
   }
-  assert.equal(jevCalls, 0, 'strong local invoice signals must remain on the server');
+  assert.equal(jevCalls, 2, 'strong local invoice signals are scored but remain authoritative in shadow mode');
 
   const receipt = await fetch(`${base}/internal/events`, {
     method: 'POST', headers,
@@ -229,7 +247,7 @@ test('concrete invoices are detected locally for WhatsApp and Gmail', async (t) 
     }),
   }).then((response) => response.json());
   assert.deepEqual(receipt.items, []);
-  assert.equal(jevCalls, 0, 'informational paid receipts must not invoke built-in Jev detection');
+  assert.equal(jevCalls, 2, 'informational paid receipts must not invoke built-in Jev detection');
 
   const newsletter = await fetch(`${base}/internal/events`, {
     method: 'POST', headers,
@@ -240,7 +258,7 @@ test('concrete invoices are detected locally for WhatsApp and Gmail', async (t) 
     }),
   }).then((response) => response.json());
   assert.deepEqual(newsletter.items, []);
-  assert.equal(jevCalls, 1, 'ambiguous long-form invoice candidates must fall through to Jev');
+  assert.equal(jevCalls, 3, 'ambiguous long-form invoice candidates must fall through to Jev');
 });
 
 test('Gmail local meeting matches require Jev confirmation and fail open when Jev is unavailable', async (t) => {

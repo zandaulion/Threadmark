@@ -42,6 +42,30 @@ const SIGNAL_QUESTIONS = {
   ),
 };
 
+const ATTENTION_QUESTIONS = {
+  promotional: noul(
+    'Is the primary purpose of `message` promotional: advertising, selling, promoting content, soliciting engagement, or inviting optional participation? When `message_context` is present, use it only as supporting evidence, never as an automatic answer. The message may be Romanian or English.',
+    {
+      true: 'The main purpose is marketing, a newsletter, a sales offer, a coupon, promotion of content, or an optional call to vote, follow, share, try, register, attend, or buy.',
+      false: 'The main purpose is personal, administrative, transactional, account or service related, security related, or communicates a concrete obligation. A bulk message can still be non-promotional.',
+    },
+  ),
+  personal_obligation: noul(
+    'Does `message` communicate a concrete obligation, commitment, deadline, reply, payment, attendance requirement, or decision that applies specifically to the recipient? When `message_context` is present, use it to distinguish a direct request from a general or optional appeal. The message may be Romanian or English.',
+    {
+      true: 'The recipient is personally expected or required to act, reply, pay, attend, provide something, make a decision, or meet a deadline, with a meaningful consequence for ignoring it.',
+      false: 'Any call to action is generic, rhetorical, promotional, advisory, or optional; a question to a group is not clearly directed at this recipient; or no concrete recipient obligation exists.',
+    },
+  ),
+  transactional: noul(
+    'Is `message` primarily about an existing transaction, service, account, order, delivery, reservation, ticket, bill, subscription, security matter, school or family administration, or another established relationship involving the recipient? The message may be Romanian or English.',
+    {
+      true: 'It concerns something the recipient already has, requested, owes, booked, ordered, uses, administers, or must handle, including a real invoice, service change, booking update, school form, or account alert.',
+      false: 'It is mainly acquisition marketing, general content, an optional event or offer, or has no concrete existing relationship or administrative matter for the recipient.',
+    },
+  ),
+};
+
 const CONTEXT_QUESTIONS = {
   changes_previous: noul(
     'Does `message` correct, reschedule, replace, or otherwise change an actionable detail in `recent_messages`?',
@@ -123,9 +147,11 @@ export class JevDetector {
     const includeBuiltIns = options.includeBuiltIns !== false;
     const includeContext = Boolean(options.contextAware || options.replyNeeded || options.paymentSafety);
     const includeDate = Boolean(options.extractDate);
+    const includeAttentionSignals = includeBuiltIns || Boolean(options.attentionSignals);
     const semanticMonitors = normaliseMonitors(monitors);
     const questions = {
       ...(includeBuiltIns ? { ...QUESTIONS, ...SIGNAL_QUESTIONS } : {}),
+      ...(includeAttentionSignals ? ATTENTION_QUESTIONS : {}),
       ...(includeContext ? CONTEXT_QUESTIONS : {}),
       ...(includeDate ? DATE_QUESTIONS : {}),
     };
@@ -134,7 +160,7 @@ export class JevDetector {
       const key = `monitor_${index}`;
       monitorKeys.set(key, monitor);
       questions[key] = noul({
-        question: 'Does the WhatsApp message in `message` match the user-defined monitoring condition?',
+        question: 'Does the message in `message` match the user-defined monitoring condition?',
         monitoring_condition: monitor.condition,
         guidance: 'Judge only whether this message satisfies the condition. The message may be Romanian or English.',
       }, {
@@ -145,7 +171,12 @@ export class JevDetector {
     if (!Object.keys(questions).length) return { ...this.status(), available: true, scores: {}, monitorScores: {}, detections: [] };
     try {
       const recentMessages = normaliseContext(options.context);
-      const state = recentMessages.length ? { message, recent_messages: recentMessages } : { message };
+      const messageContext = normaliseMessageContext(options.messageContext);
+      const state = {
+        message,
+        ...(messageContext ? { message_context: messageContext } : {}),
+        ...(recentMessages.length ? { recent_messages: recentMessages } : {}),
+      };
       const response = await this.client.systemOne({
         state,
         model: this.model,
@@ -160,6 +191,11 @@ export class JevDetector {
           urgency: probability(response.answers?.urgency?.noul),
         }
         : {};
+      if (includeAttentionSignals) {
+        signals.promotional = probability(response.answers?.promotional?.noul);
+        signals.personalObligation = probability(response.answers?.personal_obligation?.noul);
+        signals.transactional = probability(response.answers?.transactional?.noul);
+      }
       if (includeContext) {
         signals.changesPrevious = probability(response.answers?.changes_previous?.noul);
         signals.cancelsPrevious = probability(response.answers?.cancels_previous?.noul);
@@ -267,6 +303,25 @@ function normaliseContext(context) {
     direction: entry?.direction === 'outgoing' ? 'outgoing' : 'incoming',
     text: String(entry?.text || '').trim().slice(0, 2_000),
   })).filter((entry) => entry.text);
+}
+
+function normaliseMessageContext(context) {
+  if (!context || typeof context !== 'object') return null;
+  const channel = ['gmail', 'whatsapp'].includes(context.channel) ? context.channel : null;
+  const conversationKind = ['group', 'individual', 'mailbox'].includes(context.conversationKind) ? context.conversationKind : null;
+  const rawHints = context.gmailHints && typeof context.gmailHints === 'object' ? context.gmailHints : null;
+  const gmailHints = channel === 'gmail' && rawHints ? {
+    category_promotions: Boolean(rawHints.categoryPromotions),
+    has_list_unsubscribe: Boolean(rawHints.hasListUnsubscribe),
+    precedence_bulk: Boolean(rawHints.precedenceBulk),
+    auto_submitted: Boolean(rawHints.autoSubmitted),
+  } : null;
+  if (!channel && !conversationKind && !gmailHints) return null;
+  return {
+    ...(channel ? { channel } : {}),
+    ...(conversationKind ? { conversation_kind: conversationKind } : {}),
+    ...(gmailHints ? { gmail_hints: gmailHints } : {}),
+  };
 }
 
 function normaliseMonitors(monitors) {

@@ -129,16 +129,19 @@ export function createThreadmarkServer(options = {}) {
             && localDetections.some((detection) => detection.type === 'meeting');
           const context = settings.contextAware || settings.outgoingMonitoring ? store.recentContext(body) : [];
           const semanticRules = store.applicableSemanticRules(body);
+          const attentionShadow = Boolean(jev.status()?.enabled && localDetections.length);
           const shouldUseJev = (!informationalReceipt && (!localDetections.length || verifyGmailMeeting))
-            || semanticRules.length || settings.contextAware || settings.outgoingMonitoring;
+            || semanticRules.length || settings.contextAware || settings.outgoingMonitoring || attentionShadow;
           const analysis = shouldUseJev ? await jev.evaluate(body.text, semanticRules, {
             includeBuiltIns: !informationalReceipt && (!localDetections.length || verifyGmailMeeting),
+            attentionSignals: true,
             contextAware: settings.contextAware,
             replyNeeded: settings.outgoingMonitoring,
             paymentSafety: !informationalReceipt,
             extractDate: !informationalReceipt || Boolean(semanticRules.length),
             referenceAt: body.sentAt,
             context,
+            messageContext: messageContextForJev(body, selection.source),
           }) : { available: false, detections: [], signals: {} };
           const verifiedLocal = verifyGmailMeetingDetections(localDetections, analysis, config.jevThreshold, verifyGmailMeeting);
           const semanticDetections = verifyGmailMeeting
@@ -171,6 +174,7 @@ export function createThreadmarkServer(options = {}) {
               },
             });
           }
+          detections = attachAttentionShadow(detections, analysis);
           let result = store.ingestMessage(body, detections, { includeLocal: false });
           if (settings.contextAware || settings.outgoingMonitoring) store.recordContextMessage(body);
           result = { ...result, updatedItems: contextUpdates };
@@ -531,6 +535,39 @@ function sameOrigin(req) {
 
 function isGmailSource(source) {
   return source && ['gmail_label', 'gmail_sender'].includes(source.kind);
+}
+
+function messageContextForJev(message, source) {
+  if (isGmailSource(source)) {
+    return {
+      channel: 'gmail',
+      conversationKind: 'mailbox',
+      gmailHints: message?.classificationHints || {},
+    };
+  }
+  return {
+    channel: 'whatsapp',
+    conversationKind: source?.kind === 'group' ? 'group' : 'individual',
+  };
+}
+
+function attachAttentionShadow(detections, analysis) {
+  if (!analysis?.available) return detections;
+  const promotional = Number(analysis.signals?.promotional);
+  const personalObligation = Number(analysis.signals?.personalObligation);
+  const transactional = Number(analysis.signals?.transactional);
+  if (![promotional, personalObligation, transactional].every(Number.isFinite)) return detections;
+  const attentionTriage = {
+    mode: 'shadow',
+    promotional,
+    personalObligation,
+    transactional,
+    model: analysis.model || null,
+  };
+  return detections.map((detection) => ({
+    ...detection,
+    details: { ...(detection.details || {}), attentionTriage },
+  }));
 }
 
 function verifyGmailMeetingDetections(localDetections, analysis, fallbackThreshold, shouldVerify) {

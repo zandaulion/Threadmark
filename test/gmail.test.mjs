@@ -12,10 +12,14 @@ import { openDatabase, ThreadmarkStore } from '../app/server/store.mjs';
 test('normalizes Gmail text while removing quoted replies and preserving a Gmail deep link', () => {
   const source = { id: 'gmail:label:INBOX', name: 'Inbox', kind: 'gmail_label' };
   const message = {
-    id: 'msg-1', threadId: 'thread-1', internalDate: '1790856000000',
+    id: 'msg-1', threadId: 'thread-1', internalDate: '1790856000000', labelIds: ['INBOX', 'CATEGORY_PROMOTIONS'],
     payload: {
       mimeType: 'multipart/alternative',
-      headers: [{ name: 'From', value: 'Example Parent <parent@example.test>' }, { name: 'Subject', value: 'Permission form' }],
+      headers: [
+        { name: 'From', value: 'Example Parent <parent@example.test>' }, { name: 'Subject', value: 'Permission form' },
+        { name: 'List-Unsubscribe', value: '<https://example.test/unsubscribe>' }, { name: 'Precedence', value: 'bulk' },
+        { name: 'Auto-Submitted', value: 'auto-generated' },
+      ],
       parts: [{ mimeType: 'text/plain', body: { data: Buffer.from('Please sign by Friday.\n\nOn Thu, Someone wrote:\n> old text').toString('base64url') } }],
     },
   };
@@ -24,6 +28,9 @@ test('normalizes Gmail text while removing quoted replies and preserving a Gmail
   assert.equal(normalized.senderName, 'Example Parent');
   assert.equal(normalized.text, 'Permission form\n\nPlease sign by Friday.');
   assert.equal(normalized.externalUrl, 'https://mail.google.com/mail/u/0/#all/thread-1');
+  assert.deepEqual(normalized.classificationHints, {
+    categoryPromotions: true, hasListUnsubscribe: true, precedenceBulk: true, autoSubmitted: true,
+  });
   assert.match(normalized.senderId, /^gmail:sender:[a-f0-9]{32}$/u);
   assert.equal(parseMailbox('person@example.test').address, 'person@example.test');
   assert.equal(cleanEmailText('New text\n-- \nSignature'), 'New text');

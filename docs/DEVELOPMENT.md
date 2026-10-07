@@ -42,7 +42,7 @@ Before a release also build all three container images and check `/api/health` i
 - Reject unselected content before detection, Jev or durable message storage.
 - Keep connector normalization independent from UI/detector concepts.
 - Use stable message IDs and idempotent outbox delivery.
-- Run cheap local detection before external semantic detection.
+- Run cheap local detection before external semantic detection; if Jev is enabled, local alert candidates may then receive the documented shadow triage signals.
 - Never log message bodies or secrets.
 - Treat media as temporary and enforce byte/time limits.
 - Return one stable attention-item shape from every detector.
@@ -56,7 +56,7 @@ Before a release also build all three container images and check `/api/health` i
 2. Return the detection contract documented in [Architecture](ARCHITECTURE.md).
 3. Compose it in `detectAttention` or another explicit pipeline stage.
 4. Include Romanian/English, positive, negative and malformed-input tests.
-5. Confirm it does not cause locally matched text to be sent to Jev unless it participates in a documented semantic verification step such as Gmail meeting confirmation.
+5. Confirm whether it becomes an alert candidate and therefore enters the documented Jev promotional shadow boundary when Jev is enabled.
 6. Add the category or UI metadata only if the existing payment/meeting/reminder taxonomy is insufficient.
 
 Detection keys must be stable per message so generated item IDs remain deterministic.
