@@ -39,8 +39,8 @@ test('invite, group selection, bridge ingestion and resolution work together', a
         details: { detector: 'jev', model: 'jev-test', scores: { payment: 0.1, meeting: 0.2, reminder: 0.9 } },
       }];
       const attentionSignals = text.startsWith('Plata este 75 lei')
-        ? { promotional: 0.96, personalObligation: 0.08, transactional: 0.11 }
-        : { promotional: 0.12, personalObligation: 0.94, transactional: 0.88 };
+        ? { promotional: 0.96, personalObligation: 0.08, transactional: 0.11, recipientSpecific: 0.12 }
+        : { promotional: 0.12, personalObligation: 0.94, transactional: 0.88, recipientSpecific: 0.93 };
       return {
         ...this.status(), available: true, scores: {},
         signals: attentionSignals, detections,
@@ -98,7 +98,7 @@ test('invite, group selection, bridge ingestion and resolution work together', a
   assert.equal(event.items.length, 1);
   assert.equal(jevCalls, 1, 'local detections are semantically scored in shadow mode');
   assert.deepEqual(event.items[0].details.attentionTriage, {
-    mode: 'shadow', promotional: 0.96, personalObligation: 0.08, transactional: 0.11, model: 'jev-test',
+    mode: 'shadow', promotional: 0.96, personalObligation: 0.08, transactional: 0.11, recipientSpecific: 0.12, model: 'jev-test',
   });
 
   const feed = await fetch(`${base}/api/feed`, { headers: { cookie } }).then((response) => response.json());
@@ -181,7 +181,7 @@ test('concrete invoices are detected locally for WhatsApp and Gmail', async (t) 
       jevCalls += 1;
       return {
         ...this.status(), available: true, scores: {},
-        signals: { promotional: 0.04, personalObligation: 0.91, transactional: 0.96 }, detections: [],
+        signals: { promotional: 0.04, personalObligation: 0.91, transactional: 0.96, recipientSpecific: 0.98 }, detections: [],
       };
     },
   };
@@ -230,13 +230,18 @@ test('concrete invoices are detected locally for WhatsApp and Gmail', async (t) 
     assert.equal(result.items[0].type, 'payment');
     assert.equal(result.items[0].title, 'Invoice needs attention');
     assert.equal(result.items[0].details.invoice, true);
-    assert.deepEqual(result.items[0].details.attentionTriage, {
-      mode: 'shadow', promotional: 0.04, personalObligation: 0.91, transactional: 0.96, model: 'jev-test',
-    });
     assert.equal(result.items[0].notify, true);
     assert.equal(result.items[0].detectionSource, 'rule');
   }
-  assert.equal(jevCalls, 2, 'strong local invoice signals are scored but remain authoritative in shadow mode');
+  assert.deepEqual(whatsapp.items[0].details.attentionTriage, {
+    mode: 'shadow', promotional: 0.04, personalObligation: 0.91, transactional: 0.96,
+    recipientSpecific: 0.98, model: 'jev-test',
+  });
+  assert.deepEqual(gmail.items[0].details.attentionTriage, {
+    mode: 'active', promotional: 0.04, personalObligation: 0.91, transactional: 0.96,
+    recipientSpecific: 0.98, model: 'jev-test', policy: 'gmail-promo-v1',
+  });
+  assert.equal(jevCalls, 2, 'strong local invoice signals are scored but remain protected from promotional routing');
 
   const receipt = await fetch(`${base}/internal/events`, {
     method: 'POST', headers,
@@ -259,6 +264,77 @@ test('concrete invoices are detected locally for WhatsApp and Gmail', async (t) 
   }).then((response) => response.json());
   assert.deepEqual(newsletter.items, []);
   assert.equal(jevCalls, 3, 'ambiguous long-form invoice candidates must fall through to Jev');
+});
+
+test('high-confidence Gmail promotions are quiet and recoverable without weakening payment protection', async (t) => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'threadmark-promotional-'));
+  const notifications = [];
+  const nearDueAt = new Date(Date.now() + 30 * 60_000).toISOString();
+  const jev = {
+    status: () => ({ enabled: true, provider: 'TypeSafe AI', model: 'jev-test', threshold: 0.78 }),
+    async evaluate(text, monitors, options) {
+      return {
+        ...this.status(), available: true, scores: { payment: 0.05, meeting: 0.12, reminder: 0.91 },
+        signals: {
+          promotional: 0.98, personalObligation: 0.12, transactional: 0.08, recipientSpecific: 0.07,
+        },
+        detections: options.includeBuiltIns === false ? [] : [{
+          type: 'reminder', key: 'jev-reminder', title: 'Action or deadline mentioned', confidence: 0.91,
+          priority: 0.2, amountMinor: null, currency: null, eventAt: nearDueAt, notify: true,
+          details: { detector: 'jev', model: 'jev-test' },
+        }],
+      };
+    },
+  };
+  const app = createThreadmarkServer({
+    config: {
+      dataDir,
+      webDir: path.join(root, 'app/web'),
+      adminToken: '3'.repeat(64),
+      bridgeToken: '4'.repeat(64),
+      publicBaseUrl: 'https://threadmark.test',
+      cookieSecure: false,
+    },
+    push: { enabled: true, publicKey: 'test', notifyItem: async (item) => { notifications.push(item.id); } },
+    jev,
+  });
+  const source = { id: 'gmail:label:INBOX', name: 'Inbox', kind: 'gmail_label' };
+  app.store.upsertGmailSources([source]);
+  app.store.selectGmailSource(source.id, true);
+  await new Promise((resolve) => app.server.listen(0, '127.0.0.1', resolve));
+  t.after(async () => { await app.close(); fs.rmSync(dataDir, { recursive: true, force: true }); });
+  const base = `http://127.0.0.1:${app.server.address().port}`;
+  const headers = { 'x-bridge-token': '4'.repeat(64), 'content-type': 'application/json' };
+  const send = (id, text) => fetch(`${base}/internal/events`, {
+    method: 'POST', headers,
+    body: JSON.stringify({
+      id, sourceId: source.id, sourceName: source.name, sourceKind: source.kind,
+      senderId: 'gmail:sender:synthetic', senderName: 'Synthetic Sender', sentAt: new Date().toISOString(), text,
+    }),
+  }).then((response) => response.json());
+
+  const promotion = await send('gmail:synthetic-promotion', 'Join our optional product webinar and discover this month\'s features.');
+  assert.equal(promotion.items.length, 1);
+  assert.equal(promotion.items[0].notify, false);
+  assert.equal(promotion.items[0].details.attentionTriage.disposition, 'promotional');
+  assert.equal(promotion.items[0].details.attentionTriage.policy, 'gmail-promo-v1');
+  assert.equal(app.store.listItems({ status: 'open' }).length, 0);
+  assert.deepEqual(app.store.listItems({ status: 'promotional' }).map((item) => item.id), [promotion.items[0].id]);
+  assert.equal(app.store.summary().open, 0);
+  assert.equal(app.store.summary().promotional, 1);
+  assert.equal(app.store.dueNotifications().some((item) => item.id === promotion.items[0].id), false);
+  assert.deepEqual(notifications, []);
+
+  const restored = app.store.setItemFeedback(promotion.items[0].id, { feedback: 'useful' });
+  assert.equal(restored.details.attentionTriage.disposition, 'inbox');
+  assert.equal(restored.details.attentionTriage.restoredByFeedback, true);
+  assert.equal(app.store.listItems({ status: 'open' }).some((item) => item.id === restored.id), true);
+  assert.equal(app.store.summary().promotional, 0);
+
+  const payment = await send('gmail:synthetic-payment', 'Please pay the outstanding invoice of 50 RON today.');
+  assert.equal(payment.items.some((item) => item.type === 'payment'), true);
+  assert.equal(payment.items.find((item) => item.type === 'payment').details.attentionTriage.disposition, undefined);
+  assert.equal(payment.items.find((item) => item.type === 'payment').notify, true);
 });
 
 test('Gmail local meeting matches require Jev confirmation and fail open when Jev is unavailable', async (t) => {

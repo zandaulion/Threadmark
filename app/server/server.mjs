@@ -19,6 +19,9 @@ const CONTENT_TYPES = {
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
 };
+const GMAIL_PROMOTIONAL_POLICY = 'gmail-promo-v1';
+const GMAIL_PROMOTIONAL_THRESHOLD = 0.95;
+const GMAIL_PERSONAL_OBLIGATION_CEILING = 0.30;
 
 export function createThreadmarkServer(options = {}) {
   const config = loadConfig(options.config);
@@ -174,7 +177,7 @@ export function createThreadmarkServer(options = {}) {
               },
             });
           }
-          detections = attachAttentionShadow(detections, analysis);
+          detections = applyAttentionTriage(detections, analysis, selection.source);
           let result = store.ingestMessage(body, detections, { includeLocal: false });
           if (settings.contextAware || settings.outgoingMonitoring) store.recordContextMessage(body);
           result = { ...result, updatedItems: contextUpdates };
@@ -218,7 +221,7 @@ export function createThreadmarkServer(options = {}) {
           return json(res, result.enabled && result.available ? 200 : 503, result);
         }
         if (pathname === '/api/feed' && req.method === 'GET') {
-          const status = ['open', 'snoozed', 'done', 'all'].includes(url.searchParams.get('status')) ? url.searchParams.get('status') : 'open';
+          const status = ['open', 'snoozed', 'promotional', 'done', 'all'].includes(url.searchParams.get('status')) ? url.searchParams.get('status') : 'open';
           const type = ['payment', 'meeting', 'reminder', 'all'].includes(url.searchParams.get('type')) ? url.searchParams.get('type') : 'all';
           return json(res, 200, { items: store.listItems({ status, type }) });
         }
@@ -551,23 +554,33 @@ function messageContextForJev(message, source) {
   };
 }
 
-function attachAttentionShadow(detections, analysis) {
+function applyAttentionTriage(detections, analysis, source) {
   if (!analysis?.available) return detections;
   const promotional = Number(analysis.signals?.promotional);
   const personalObligation = Number(analysis.signals?.personalObligation);
   const transactional = Number(analysis.signals?.transactional);
-  if (![promotional, personalObligation, transactional].every(Number.isFinite)) return detections;
+  const recipientSpecific = Number(analysis.signals?.recipientSpecific);
+  if (![promotional, personalObligation, transactional, recipientSpecific].every(Number.isFinite)) return detections;
+  const gmailSource = isGmailSource(source);
   const attentionTriage = {
-    mode: 'shadow',
+    mode: gmailSource ? 'active' : 'shadow',
     promotional,
     personalObligation,
     transactional,
+    recipientSpecific,
     model: analysis.model || null,
+    ...(gmailSource ? { policy: GMAIL_PROMOTIONAL_POLICY } : {}),
   };
-  return detections.map((detection) => ({
-    ...detection,
-    details: { ...(detection.details || {}), attentionTriage },
-  }));
+  return detections.map((detection) => {
+    const details = { ...(detection.details || {}), attentionTriage: { ...attentionTriage } };
+    const protectedDetection = detection.type === 'payment' || details.ruleId || details.monitorId || details.needsReview;
+    const promotionalDisposition = gmailSource && !protectedDetection
+      && promotional >= GMAIL_PROMOTIONAL_THRESHOLD
+      && personalObligation <= GMAIL_PERSONAL_OBLIGATION_CEILING;
+    if (!promotionalDisposition) return { ...detection, details };
+    details.attentionTriage.disposition = 'promotional';
+    return { ...detection, notify: false, details };
+  });
 }
 
 function verifyGmailMeetingDetections(localDetections, analysis, fallbackThreshold, shouldVerify) {

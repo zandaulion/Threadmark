@@ -102,6 +102,7 @@ h3 { margin: 0; font-size: 1.08rem; }
 .detection-source.rule-jev { background: linear-gradient(90deg, var(--teal-soft), var(--coral-soft)); color: var(--ink); }
 .detection-source.review { background: #f2c14e2b; color: #80610f; }
 .priority-chip { padding: 4px 8px; border-radius: 999px; background: #f2c14e2b; color: #80610f; font-weight: 850; }
+.promotional-chip { padding: 4px 8px; border-radius: 999px; background: #7067cf18; color: #5148a8; font-weight: 850; }
 .due-chip, .media-chip { padding: 4px 8px; border-radius: 999px; background: var(--teal-soft); color: var(--teal); font-weight: 800; }
 .due-chip.overdue { background: var(--coral-soft); color: #9b3c27; }
 .media-chip { background: #7067cf18; color: #5148a8; }
@@ -278,7 +279,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--teal); box-shado
   .tabs { gap: 15px; overflow-x: auto; }
   .tab { font-size: .84rem; }
   #refresh-button { display: none; }
-  .feed-controls { align-self: flex-start; }
+  .feed-controls { align-self: stretch; overflow-x: auto; }
+  .status-tabs { min-width: max-content; }
   .status-tab { min-height: 30px; padding: 0 9px; font-size: .7rem; }
   .attention-item { grid-template-columns: 42px minmax(0, 1fr); padding: 18px 0; }
   .done-button, .item-action-strip { grid-column: 2; justify-self: start; }

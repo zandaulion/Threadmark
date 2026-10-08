@@ -59,7 +59,7 @@ The create response includes the one-time code and URL. Never expose the admin t
 | `GET` | `/api/items/:id/calendar.ics` | Download calendar event if dated |
 | `GET` | `/api/stream` | Server-sent events |
 
-Feed `status` is `open`, `snoozed`, `done` or `all`. Feed `type` is `payment`, `meeting`, `reminder` or `all`.
+Feed `status` is `open`, `snoozed`, `promotional`, `done` or `all`. Feed `type` is `payment`, `meeting`, `reminder` or `all`. Promotional items remain `status: "open"` internally and are selected by `details.attentionTriage.disposition`; this preserves the existing status/action model while keeping them out of ordinary open and snoozed feeds.
 
 Settings body:
 

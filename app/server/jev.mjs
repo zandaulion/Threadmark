@@ -64,6 +64,13 @@ const ATTENTION_QUESTIONS = {
       false: 'It is mainly acquisition marketing, general content, an optional event or offer, or has no concrete existing relationship or administrative matter for the recipient.',
     },
   ),
+  recipient_specific: noul(
+    'Does `message` concern the recipient\'s own account, order, booking, delivery, bill, subscription, configuration, relationship, or required administrative matter rather than a broad announcement for many recipients? When `message_context` is present, use it only as supporting evidence. The message may be Romanian or English.',
+    {
+      true: 'The message is tied to something specific to this recipient, such as their actual account, transaction, service state, reservation, child, household, application, or required decision.',
+      false: 'It is a general product update, broad announcement, marketing campaign, newsletter, generic advice, or optional opportunity without evidence that it affects this recipient specifically.',
+    },
+  ),
 };
 
 const CONTEXT_QUESTIONS = {
@@ -195,6 +202,7 @@ export class JevDetector {
         signals.promotional = probability(response.answers?.promotional?.noul);
         signals.personalObligation = probability(response.answers?.personal_obligation?.noul);
         signals.transactional = probability(response.answers?.transactional?.noul);
+        signals.recipientSpecific = probability(response.answers?.recipient_specific?.noul);
       }
       if (includeContext) {
         signals.changesPrevious = probability(response.answers?.changes_previous?.noul);

@@ -24,12 +24,12 @@ Gmail begins at the current mailbox checkpoint and does not import old messages.
 | Gmail synchronization | Google Gmail API | OAuth tokens, message IDs, labels/headers, and complete bodies only for enabled sources |
 | Jev enabled, local checks find no match | TypeSafe AI | Selected message text and batched semantic questions, including the narrow invoice judgment |
 | Jev enabled, local checks find a Gmail meeting candidate | TypeSafe AI | Selected email text and batched semantic questions used to confirm or reject the meeting |
-| Jev enabled, local checks create any other alert candidate | TypeSafe AI | Selected message text and sanitized channel/bulk-mail booleans used to collect non-enforcing promotional, obligation and transactional scores |
+| Jev enabled, local checks create any other alert candidate | TypeSafe AI | Selected message text and sanitized channel/bulk-mail booleans used to estimate promotional purpose, obligation, transactional relevance and recipient specificity; a narrow Gmail policy can route the item quietly to Promotional |
 | Semantic rule sample test | TypeSafe AI | The sample text and monitor condition |
 | Context/reply features enabled | TypeSafe AI | Current text plus up to six recent selected-source text snippets and direction labels |
 | Web Push enabled | Browser push service | Notification title, selected source name, matched title, item URL/tag/identifier and Done/Actions metadata |
 
-Threadmark does not intentionally send TypeSafe AI the chat name, sender name, email address, phone number, WhatsApp source ID, Gmail message ID or raw email-header values. It can send only coarse context such as Gmail/WhatsApp, group/individual/mailbox and boolean Gmail bulk hints. Jev provider-side handling and retention are governed by TypeSafe's terms and configuration, not by the local Threadmark database.
+Threadmark does not intentionally send TypeSafe AI the chat name, sender name, email address, phone number, WhatsApp source ID, Gmail message ID or raw email-header values. It can send only coarse context such as Gmail/WhatsApp, group/individual/mailbox and boolean Gmail bulk hints. Gmail items routed to Promotional remain in the local database and do not produce push notifications; they are not sent to an additional service. Jev provider-side handling and retention are governed by TypeSafe's terms and configuration, not by the local Threadmark database.
 
 Web Push necessarily passes an encrypted push payload through the browser vendor's push service. Although its contents are encrypted to the subscription, notification text can still appear on a locked screen depending on device settings.
 

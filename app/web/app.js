@@ -9,7 +9,7 @@ const state = {
   contacts: [],
   gmailSources: [],
   rules: [],
-  summary: { open: 0, payments: 0, meetings: 0, reminders: 0, groups: 0, contacts: 0, gmail: 0 },
+  summary: { open: 0, payments: 0, meetings: 0, reminders: 0, promotional: 0, groups: 0, contacts: 0, gmail: 0 },
   filter: 'all',
   status: 'open',
   scopeMode: 'groups',
@@ -145,7 +145,10 @@ function renderSummary() {
 
 function renderFeed() {
   if (!state.items.length) {
-    feed.innerHTML = `<div class="empty-state"><div class="empty-glyph">✓</div><h2>${state.status === 'open' ? 'Nothing waiting' : state.status === 'snoozed' ? 'Nothing snoozed' : 'No completed items'}</h2><p>Items in this view will appear here.</p></div>`;
+    const heading = state.status === 'open' ? 'Nothing waiting'
+      : state.status === 'snoozed' ? 'Nothing snoozed'
+        : state.status === 'promotional' ? 'No promotional messages' : 'No completed items';
+    feed.innerHTML = `<div class="empty-state"><div class="empty-glyph">✓</div><h2>${heading}</h2><p>Items in this view will appear here.</p></div>`;
     return;
   }
   feed.innerHTML = state.items.map((item) => `
@@ -156,7 +159,7 @@ function renderFeed() {
         <p class="item-text" id="message-${safeDomId(item.id)}">${escapeHtml(item.details?.needsReview ? 'The handwriting could not be read reliably. Review the original photo in WhatsApp.' : item.text)}</p>
         <button class="message-toggle" type="button" data-action="toggle-message" data-id="${escapeHtml(item.id)}" aria-expanded="false" aria-controls="message-${safeDomId(item.id)}">Show full message</button>
         ${safetyNotice(item)}
-        <div class="item-meta"><span>${escapeHtml(item.senderName)}</span><span>·</span><time datetime="${escapeHtml(item.sentAt)}">${formatWhen(item.sentAt)}</time>${detectionSourceBadge(item)}${priorityBadge(item)}${dueBadge(item)}${mediaBadge(item)}<span class="confidence">${Math.round(item.confidence * 100)}% match</span></div>
+        <div class="item-meta"><span>${escapeHtml(item.senderName)}</span><span>·</span><time datetime="${escapeHtml(item.sentAt)}">${formatWhen(item.sentAt)}</time>${detectionSourceBadge(item)}${promotionalBadge(item)}${priorityBadge(item)}${dueBadge(item)}${mediaBadge(item)}<span class="confidence">${Math.round(item.confidence * 100)}% match</span></div>
       </div>
       ${itemActions(item)}
     </article>`).join('');
@@ -283,13 +286,13 @@ function renderDetection() {
   const enabled = Boolean(state.detection.enabled);
   $('#jev-state').textContent = enabled ? 'Active' : 'Not configured';
   $('#jev-copy').textContent = enabled
-    ? `Local detection runs first. ${state.detection.provider} ${state.detection.model} checks unmatched messages and verifies Gmail meetings. Alert candidates also receive promotional, obligation and transactional scores in shadow mode; these scores do not hide alerts. Invoice judgments use a ${Math.round((state.detection.invoiceThreshold || .68) * 100)}% threshold.`
+    ? `Local detection runs first. ${state.detection.provider} ${state.detection.model} checks unmatched messages and verifies Gmail meetings. Very likely Gmail promotions with no personal obligation are kept quietly under Promotional; payments, your rules and WhatsApp are protected. Invoice judgments use a ${Math.round((state.detection.invoiceThreshold || .68) * 100)}% threshold.`
     : 'Local detectors and custom rules are active. Add a TypeSafe API key on the server to enable the Jev fallback.';
   $('#jev-test').hidden = !enabled;
   $('#privacy-copy').textContent = enabled
     ? state.settings.contextAware || state.settings.outgoingMonitoring
-      ? 'Unselected chats never leave this server. Selected alert candidates receive Jev shadow scores, and you enabled short-lived context for selected chats; Jev receives text and direction labels, never chat identities.'
-      : 'Unselected sources never leave this server. Selected alert candidates and unmatched text are sent to TypeSafe AI for detection and shadow triage; source identities are not sent.'
+      ? 'Unselected chats never leave this server. Selected alert candidates receive Jev attention scores, and you enabled short-lived context for selected chats; Jev receives text and direction labels, never chat identities.'
+      : 'Unselected sources never leave this server. Selected alert candidates and unmatched text are sent to TypeSafe AI for detection and Gmail promotional triage; source identities are not sent.'
     : 'Unselected chat content is discarded after local routing. Matching excerpts stay on this server only.';
 }
 
@@ -399,8 +402,9 @@ feed.addEventListener('click', async (event) => {
       await api(`/api/items/${id}/snooze`, { method: 'POST', body: JSON.stringify({ until }) });
       showToast(`Snoozed for ${button.dataset.hours} hours`);
     } else if (button.dataset.action === 'useful' || button.dataset.action === 'not_relevant') {
+      const restoringPromotional = state.status === 'promotional' && button.dataset.action === 'useful';
       await api(`/api/items/${id}/feedback`, { method: 'POST', body: JSON.stringify({ feedback: button.dataset.action }) });
-      showToast(button.dataset.action === 'useful' ? 'Saved as useful feedback' : 'Removed and saved as feedback');
+      showToast(restoringPromotional ? 'Moved to inbox and saved as useful' : button.dataset.action === 'useful' ? 'Saved as useful feedback' : 'Removed and saved as feedback');
     } else if (button.dataset.action === 'category') {
       await api(`/api/items/${id}/feedback`, { method: 'POST', body: JSON.stringify({ feedback: 'wrong_category', category: button.dataset.category }) });
       showToast(`Moved to ${categoryLabel(button.dataset.category).toLowerCase()}`);
@@ -971,6 +975,13 @@ function priorityBadge(item) {
     : '';
 }
 
+function promotionalBadge(item) {
+  const probability = Number(item.details?.attentionTriage?.promotional);
+  return item.details?.attentionTriage?.disposition === 'promotional' && Number.isFinite(probability)
+    ? `<span class="promotional-chip" title="Jev promotional probability">Promotional ${Math.round(probability * 100)}%</span>`
+    : '';
+}
+
 function dueBadge(item) {
   if (!item.eventAt) return '';
   const date = new Date(item.eventAt);
@@ -998,6 +1009,11 @@ function itemActions(item) {
   const contactNumber = item.source?.kind === 'contact' ? String(item.source.id || '').match(/^(\d+)@s\.whatsapp\.net$/u)?.[1] : '';
   const whatsapp = item.details?.needsReview && contactNumber ? `<a class="menu-action" href="https://wa.me/${contactNumber}" target="_blank" rel="noopener">Open WhatsApp chat</a>` : '';
   const gmail = item.source?.kind?.startsWith('gmail_') && item.externalUrl ? `<a class="menu-action" href="${escapeHtml(item.externalUrl)}" target="_blank" rel="noopener">Open in Gmail</a>` : '';
+  if (state.status === 'promotional') return `<div class="item-action-strip">
+    <button class="quick-done" type="button" data-action="useful" data-id="${escapeHtml(item.id)}"><span aria-hidden="true">↩</span> Move to inbox</button>
+    <details class="item-actions"><summary>Actions</summary><div class="item-action-menu">
+      ${gmail}<button type="button" data-action="not_relevant" data-id="${escapeHtml(item.id)}">Not relevant</button>
+    </div></details></div>`;
   return `<div class="item-action-strip">
     <button class="quick-done" type="button" data-action="done" data-id="${escapeHtml(item.id)}" aria-label="Mark ${escapeHtml(item.title)} as done" title="Mark done"><span aria-hidden="true">✓</span> Done</button>
     <details class="item-actions"><summary>Actions</summary><div class="item-action-menu">

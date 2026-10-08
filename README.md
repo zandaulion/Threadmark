@@ -52,11 +52,11 @@ The two connectors and app run as separate rootless Podman containers on a priva
 - Romanian and English invoice, payment and meeting detectors. Concrete invoice notices do not require an amount or IBAN; paid receipts and order confirmations are ignored unless they contain a new action to take.
 - Built-in subscription lifecycle monitoring for purchases, starts, renewals, re-subscriptions, price changes, expirations, cancellations and payment failures; clearly labeled test purchase receipts stay quiet.
 - Local custom rules with any/all phrase matching, category, chat scope, enable/disable controls, optional notifications and a sample-text tester.
-- Optional Jev semantic fallback for locally unmatched invoice, payment, meeting and reminder messages, plus Gmail meeting verification and shadow-mode promotional triage for alert candidates.
+- Optional Jev semantic fallback for locally unmatched invoice, payment, meeting and reminder messages, plus Gmail meeting verification and conservative promotional triage.
 - User-defined semantic monitors with plain-language conditions, per-monitor thresholds, chat scope, notifications and a Jev sample tester.
 - Jev urgency probability stored as a priority signal; high-urgency items rise in the feed and receive a visible badge and urgent notification title.
 - Local absolute/relative deadline extraction, due/overdue badges and downloadable calendar events.
-- Snooze, daily digest, useful/not-relevant feedback and category correction controls.
+- Snooze, a reviewable Promotional view, daily digest, useful/not-relevant feedback and category correction controls.
 - Optional context-aware correction/cancellation detection with a 48-hour local rolling buffer.
 - Optional outgoing-message monitoring that closes reply reminders when you answer.
 - Conservative payment warnings for changed details, changed amounts, possible duplicates and unusual credential/payment language.
@@ -218,7 +218,7 @@ The public/tailnet PWA route must never inject the admin token. Only the private
 - Selected messages with no detection are not retained.
 - Matched excerpts stay in the local SQLite database.
 - Custom rule and semantic-monitor definitions stay in that same local database. Phrase test samples are evaluated locally and are not saved.
-- When Jev is enabled, the text of an otherwise-unmatched message, a locally matched Gmail meeting candidate, or any local alert candidate from a selected source is sent to TypeSafe AI. Local alert candidates are evaluated in promotional shadow mode; those scores do not suppress alerts. Threadmark does not send the source name, sender name, email address, phone number, WhatsApp ID or message ID.
+- When Jev is enabled, the text of an otherwise-unmatched message, a locally matched Gmail meeting candidate, or any local alert candidate from a selected source is sent to TypeSafe AI. Gmail candidates can be routed quietly to the local Promotional view by the narrow policy described below. Threadmark does not send the source name, sender name, email address, phone number, WhatsApp ID or message ID.
 - Jev receives only coarse channel context: Gmail or WhatsApp, group/individual/mailbox, and boolean Gmail bulk-mail hints such as Promotions category or the presence of `List-Unsubscribe`. Header values are not sent, and no single hint determines the result.
 - Context-aware changes/cancellations and reply monitoring are off by default. If enabled, selected-chat text and direction labels are held locally for at most 48 hours and recent text may be sent to Jev; identities and IDs are still removed.
 - Outgoing messages are ignored unless reply monitoring is explicitly enabled.
@@ -232,15 +232,17 @@ Back up all three data directories together with the environment file, using enc
 
 ## Jev semantic detection
 
-Threadmark always runs its deterministic detectors and local phrase rules first. Concrete Romanian or English invoice notices are stored locally as Payment items even when the message contains no amount or IBAN. When Jev is enabled, the app batches independent invoice, payment, meeting, reminder, urgency, promotional, personal-obligation and transactional Noul questions with any applicable semantic-monitor questions. If the local layer found nothing, a matching custom monitor takes precedence; otherwise a positive invoice judgment becomes a Payment item at `JEV_INVOICE_THRESHOLD` (default `0.68`) and the strongest generic built-in result uses `JEV_THRESHOLD` (default `0.78`). The lower invoice threshold reflects the higher cost of missing a bill, while the narrow question explicitly excludes marketing and hypothetical invoicing content.
+Threadmark always runs its deterministic detectors and local phrase rules first. Concrete Romanian or English invoice notices are stored locally as Payment items even when the message contains no amount or IBAN. When Jev is enabled, the app batches independent invoice, payment, meeting, reminder, urgency, promotional, personal-obligation, transactional and recipient-specific Noul questions with any applicable semantic-monitor questions. If the local layer found nothing, a matching custom monitor takes precedence; otherwise a positive invoice judgment becomes a Payment item at `JEV_INVOICE_THRESHOLD` (default `0.68`) and the strongest generic built-in result uses `JEV_THRESHOLD` (default `0.78`). The lower invoice threshold reflects the higher cost of missing a bill, while the narrow question explicitly excludes marketing and hypothetical invoicing content.
 
 Marketing email often combines words such as “call” with dates or times, so a local Gmail meeting match is sent through the same Jev questions. The local meeting is kept only when Jev's meeting probability reaches `JEV_THRESHOLD`; confirmed cards show **Rule + Jev**. An alternate Jev category may still be emitted when it reaches the threshold. If Jev is unavailable or omits the meeting score, Threadmark fails open and keeps the local meeting.
 
-All other local alert candidates, from Gmail or WhatsApp, remain authoritative while promotional triage is in **shadow mode**. Jev estimates promotional purpose, personal obligation and transactional/administrative relevance; Threadmark stores those probabilities under the item's `details.attentionTriage` alongside subsequent local **Useful** or **Not relevant** feedback. No shadow score hides, demotes or changes notification behavior. This provides representative calibration data before any automatic filtering is enabled.
+For Gmail only, an unprotected candidate is routed to **Promotional** when Jev assigns at least `0.95` promotional probability and at most `0.30` personal-obligation probability. It remains in the local database and the reviewable Promotional view, but it is excluded from Inbox counters, push notifications and due reminders. **Move to inbox** restores it and records useful feedback; **Not relevant** resolves it. Payments and invoices, user-created phrase rules, user-created semantic monitors and manual photo-review alerts are always protected. WhatsApp remains in shadow mode and is never routed by this policy. The recipient-specific and transactional scores are stored for future calibration but do not currently make routing decisions.
 
-The urgency probability is stored separately as the item's priority; values at or above `0.78` are surfaced as urgent. API failure is fail-open: ingestion continues and the local layer remains available.
+The policy applies only while new messages are ingested; it does not reclassify the existing Inbox or historical feedback. Jev/API failure is fail-open, so a local match remains visible rather than being silently discarded.
 
-Promotional shadow mode expands the Jev privacy boundary to local alert candidates from selected sources. Enabling context-aware or reply monitoring additionally expands the input to recent selected-source text as described in the PWA. Disable Jev to keep local detections and phrase-rule matches entirely on the server.
+The urgency probability is stored separately as the item's priority; values at or above `0.78` are surfaced as urgent.
+
+Promotional triage expands the Jev privacy boundary to local alert candidates from selected sources. Enabling context-aware or reply monitoring additionally expands the input to recent selected-source text as described in the PWA. Disable Jev to keep local detections and phrase-rule matches entirely on the server.
 
 Configure the API key without placing it in shell history or the browser:
 

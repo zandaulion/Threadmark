@@ -512,8 +512,10 @@ export class ThreadmarkStore {
   listItems({ status = 'open', type = 'all', limit = 100 } = {}) {
     const clauses = [];
     const values = [];
-    if (status === 'open') clauses.push("a.status='open' AND (a.snoozed_until IS NULL OR datetime(a.snoozed_until)<=datetime('now'))");
-    else if (status === 'snoozed') clauses.push("a.status='open' AND datetime(a.snoozed_until)>datetime('now')");
+    const promotional = "COALESCE(json_extract(a.details_json, '$.attentionTriage.disposition'), '')='promotional'";
+    if (status === 'open') clauses.push(`a.status='open' AND NOT (${promotional}) AND (a.snoozed_until IS NULL OR datetime(a.snoozed_until)<=datetime('now'))`);
+    else if (status === 'snoozed') clauses.push(`a.status='open' AND NOT (${promotional}) AND datetime(a.snoozed_until)>datetime('now')`);
+    else if (status === 'promotional') clauses.push(`a.status='open' AND ${promotional}`);
     else if (status !== 'all') { clauses.push('a.status=?'); values.push(status); }
     if (type !== 'all') { clauses.push('a.type=?'); values.push(type); }
     values.push(Math.min(Math.max(Number(limit) || 100, 1), 200));
@@ -522,7 +524,9 @@ export class ThreadmarkStore {
       ? 'a.resolved_at DESC, a.created_at DESC'
       : status === 'snoozed'
         ? 'a.snoozed_until ASC, a.created_at DESC'
-        : 'CASE WHEN COALESCE(a.priority, 0)>=0.78 THEN 1 ELSE 0 END DESC, a.created_at DESC';
+        : status === 'promotional'
+          ? "json_extract(a.details_json, '$.attentionTriage.promotional') DESC, a.created_at DESC"
+          : 'CASE WHEN COALESCE(a.priority, 0)>=0.78 THEN 1 ELSE 0 END DESC, a.created_at DESC';
     return this.db.prepare(`${itemSelect()} ${where}
       ORDER BY ${orderBy} LIMIT ?`).all(...values).map(publicItem);
   }
@@ -546,8 +550,12 @@ export class ThreadmarkStore {
     if (!feedback) return null;
     const category = ['payment', 'meeting', 'reminder'].includes(input.category) ? input.category : item.type;
     const nextStatus = feedback === 'not_relevant' ? 'done' : item.status;
-    this.db.prepare(`UPDATE attention_items SET feedback=?, feedback_at=?, type=?, status=?, resolved_at=CASE WHEN ?='done' THEN ? ELSE resolved_at END
-      WHERE id=?`).run(feedback, now(), feedback === 'wrong_category' ? category : item.type, nextStatus, nextStatus, now(), id);
+    const details = { ...(item.details || {}) };
+    if (feedback === 'useful' && details.attentionTriage?.disposition === 'promotional') {
+      details.attentionTriage = { ...details.attentionTriage, disposition: 'inbox', restoredByFeedback: true };
+    }
+    this.db.prepare(`UPDATE attention_items SET feedback=?, feedback_at=?, type=?, status=?, details_json=?, resolved_at=CASE WHEN ?='done' THEN ? ELSE resolved_at END
+      WHERE id=?`).run(feedback, now(), feedback === 'wrong_category' ? category : item.type, nextStatus, JSON.stringify(details), nextStatus, now(), id);
     this.db.prepare('INSERT INTO audit_events (action, detail, created_at) VALUES (?, ?, ?)')
       .run('item_feedback', JSON.stringify({ itemId: id, feedback, category: feedback === 'wrong_category' ? category : null }), now());
     return this.itemById(id);
@@ -562,7 +570,8 @@ export class ThreadmarkStore {
   }
 
   dueNotifications() {
-    return this.db.prepare(`${itemSelect()} WHERE a.status='open' AND (
+    return this.db.prepare(`${itemSelect()} WHERE a.status='open'
+      AND COALESCE(json_extract(a.details_json, '$.attentionTriage.disposition'), '')!='promotional' AND (
       (a.snoozed_until IS NOT NULL AND datetime(a.snoozed_until)<=datetime('now') AND a.last_notified_at IS NULL)
       OR (a.event_at IS NOT NULL AND a.event_at<=datetime('now', '+1 hour') AND a.event_at>datetime('now', '-12 hours')
         AND (a.last_notified_at IS NULL OR datetime(a.last_notified_at)<datetime(a.event_at, '-1 hour')))
@@ -594,8 +603,9 @@ export class ThreadmarkStore {
 
   summary() {
     const rows = this.db.prepare(`SELECT type, COUNT(*) AS count FROM attention_items
-      WHERE status='open' AND (snoozed_until IS NULL OR datetime(snoozed_until)<=datetime('now')) GROUP BY type`).all();
-    const summary = { open: 0, payments: 0, meetings: 0, reminders: 0, snoozed: 0, groups: 0, contacts: 0, gmail: 0 };
+      WHERE status='open' AND COALESCE(json_extract(details_json, '$.attentionTriage.disposition'), '')!='promotional'
+      AND (snoozed_until IS NULL OR datetime(snoozed_until)<=datetime('now')) GROUP BY type`).all();
+    const summary = { open: 0, payments: 0, meetings: 0, reminders: 0, snoozed: 0, promotional: 0, groups: 0, contacts: 0, gmail: 0 };
     for (const row of rows) {
       summary.open += Number(row.count);
       if (row.type === 'payment') summary.payments = Number(row.count);
@@ -605,7 +615,10 @@ export class ThreadmarkStore {
     summary.groups = Number(this.db.prepare("SELECT COUNT(*) AS count FROM groups WHERE selected=1 AND kind='group'").get().count);
     summary.contacts = Number(this.db.prepare("SELECT COUNT(*) AS count FROM groups WHERE selected=1 AND kind='contact'").get().count);
     summary.gmail = Number(this.db.prepare("SELECT COUNT(*) AS count FROM groups WHERE selected=1 AND kind IN ('gmail_label','gmail_sender')").get().count);
-    summary.snoozed = Number(this.db.prepare("SELECT COUNT(*) AS count FROM attention_items WHERE status='open' AND datetime(snoozed_until)>datetime('now')").get().count);
+    summary.snoozed = Number(this.db.prepare(`SELECT COUNT(*) AS count FROM attention_items WHERE status='open'
+      AND COALESCE(json_extract(details_json, '$.attentionTriage.disposition'), '')!='promotional' AND datetime(snoozed_until)>datetime('now')`).get().count);
+    summary.promotional = Number(this.db.prepare(`SELECT COUNT(*) AS count FROM attention_items WHERE status='open'
+      AND json_extract(details_json, '$.attentionTriage.disposition')='promotional'`).get().count);
     return summary;
   }
 
