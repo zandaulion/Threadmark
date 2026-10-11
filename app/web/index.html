@@ -51,8 +51,12 @@
     <main class="shell">
       <section class="main-column">
         <div class="profile-tabs" id="profile-tabs" role="tablist" aria-label="Attention profile">
-          <button class="profile-tab active" type="button" role="tab" aria-selected="true" data-profile="personal"><span aria-hidden="true">●</span> Personal</button>
-          <button class="profile-tab" type="button" role="tab" aria-selected="false" data-profile="dev"><span aria-hidden="true">⌘</span> Dev</button>
+          <button class="profile-tab active" type="button" role="tab" aria-selected="true" data-profile="personal">
+            <span class="profile-marker" aria-hidden="true">●</span><span class="profile-name">Personal</span><span class="profile-count" data-profile-count="personal">0</span>
+          </button>
+          <button class="profile-tab" type="button" role="tab" aria-selected="false" data-profile="dev">
+            <span class="profile-marker" aria-hidden="true">⌘</span><span class="profile-name">Dev</span><span class="profile-count" data-profile-count="dev">0</span>
+          </button>
         </div>
         <div class="intro-row">
           <div>

@@ -43,6 +43,7 @@ The two connectors and app run as separate rootless Podman containers on a priva
 - Live receipt of new group and individual-chat messages.
 - Separate group and contact allowlists; every source is off by default.
 - Personal and Dev profiles with separate feeds, counters, sources, rules, Done/Snoozed/Promotional views and labeled notifications.
+- Sticky Personal/Dev switch with live Needs attention badges for both profiles, visible while scrolling on desktop and mobile.
 - Two isolated read-only Gmail OAuth connections with independent label and discovered-sender allowlists.
 - Gmail incremental synchronization every 60 seconds, starting at connection time without importing old mail.
 - Metadata-first routing: complete email bodies are fetched only for enabled labels or senders; attachments are not downloaded.

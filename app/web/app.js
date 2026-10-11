@@ -10,6 +10,10 @@ const state = {
   gmailSources: [],
   profiles: [{ id: 'personal', name: 'Personal' }, { id: 'dev', name: 'Dev' }],
   profileId: 'personal',
+  profileSummaries: {
+    personal: { open: 0, payments: 0, meetings: 0, reminders: 0, promotional: 0, groups: 0, contacts: 0, gmail: 0 },
+    dev: { open: 0, payments: 0, meetings: 0, reminders: 0, promotional: 0, groups: 0, contacts: 0, gmail: 0 },
+  },
   rules: [],
   summary: { open: 0, payments: 0, meetings: 0, reminders: 0, promotional: 0, groups: 0, contacts: 0, gmail: 0 },
   filter: 'all',
@@ -106,9 +110,9 @@ function finishGmailRedirect() {
 }
 
 async function refreshAll() {
-  const [profiles, summary, feedResult, groups, contacts, gmailSources, rules, bridge, gmail, detection, settings] = await Promise.all([
+  const [profiles, profileSummaries, feedResult, groups, contacts, gmailSources, rules, bridge, gmail, detection, settings] = await Promise.all([
     api('/api/profiles'),
-    api(profileApi('/api/summary')),
+    fetchProfileSummaries(),
     api(profileApi(`/api/feed?type=${encodeURIComponent(state.filter)}&status=${encodeURIComponent(state.status)}`)),
     api(profileApi('/api/groups')),
     api(profileApi('/api/contacts')),
@@ -120,7 +124,8 @@ async function refreshAll() {
     api('/api/settings'),
   ]);
   state.profiles = profiles.profiles;
-  state.summary = summary;
+  state.profileSummaries = profileSummaries;
+  state.summary = state.profileSummaries[state.profileId];
   state.items = feedResult.items;
   state.groups = groups.groups;
   state.contacts = contacts.contacts;
@@ -146,9 +151,21 @@ function render() {
 
 function renderProfiles() {
   $$('[data-profile]').forEach((tab) => {
-    const active = tab.dataset.profile === state.profileId;
+    const profileId = tab.dataset.profile;
+    const active = profileId === state.profileId;
+    const count = Number(state.profileSummaries[profileId]?.open || 0);
+    const profileName = state.profiles.find((profile) => profile.id === profileId)?.name || profileId;
+    const countLabel = `${count} ${count === 1 ? 'item needs' : 'items need'} attention`;
     tab.classList.toggle('active', active);
     tab.setAttribute('aria-selected', String(active));
+    tab.setAttribute('aria-label', `${profileName}, ${countLabel}`);
+    tab.title = countLabel;
+    const badge = tab.querySelector('[data-profile-count]');
+    if (badge) {
+      badge.textContent = count > 99 ? '99+' : String(count);
+      badge.classList.toggle('has-items', count > 0);
+      badge.setAttribute('aria-label', countLabel);
+    }
   });
   const dev = state.profileId === 'dev';
   $('#profile-heading').textContent = dev ? 'Your projects, under control.' : 'Your attention, distilled.';
@@ -157,10 +174,25 @@ function renderProfiles() {
     : 'Invoices, payments, meetings, and reminders from the conversations you chose—nothing else.';
 }
 
-function profileApi(pathname) {
+function profileApi(pathname, profileId = state.profileId) {
   const url = new URL(pathname, location.origin);
-  url.searchParams.set('profile', state.profileId);
+  url.searchParams.set('profile', profileId);
   return `${url.pathname}${url.search}`;
+}
+
+async function fetchProfileSummaries() {
+  const [personal, dev] = await Promise.all([
+    api(profileApi('/api/summary', 'personal')),
+    api(profileApi('/api/summary', 'dev')),
+  ]);
+  return { personal, dev };
+}
+
+function applyProfileSummaries(profileSummaries) {
+  state.profileSummaries = profileSummaries;
+  state.summary = profileSummaries[state.profileId];
+  renderProfiles();
+  renderSummary();
 }
 
 function renderSummary() {
@@ -340,6 +372,7 @@ function connectStream() {
   stream.addEventListener('item', async (event) => {
     const item = JSON.parse(event.data);
     if (!item.profile || item.profile.id === state.profileId) await refreshFeedAndSummary();
+    else applyProfileSummaries(await fetchProfileSummaries());
   });
   stream.addEventListener('groups', (event) => { state.groups = JSON.parse(event.data); renderSources(); });
   stream.addEventListener('contacts', (event) => { state.contacts = JSON.parse(event.data); renderSources(); });
@@ -367,13 +400,12 @@ function connectStream() {
 }
 
 async function refreshFeedAndSummary() {
-  const [summary, result] = await Promise.all([
-    api(profileApi('/api/summary')),
+  const [profileSummaries, result] = await Promise.all([
+    fetchProfileSummaries(),
     api(profileApi(`/api/feed?type=${encodeURIComponent(state.filter)}&status=${encodeURIComponent(state.status)}`)),
   ]);
-  state.summary = summary;
+  applyProfileSummaries(profileSummaries);
   state.items = result.items;
-  renderSummary();
   renderFeed();
 }
 

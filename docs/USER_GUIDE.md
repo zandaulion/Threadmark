@@ -21,6 +21,8 @@ Install the PWA from the browser menu for a full-screen experience and more reli
 
 Use the **Personal / Dev** switch above the inbox. Each profile has its own feed, counters, Done/Snoozed/Promotional views, Gmail sources and rules. WhatsApp belongs to Personal. The active profile is remembered on the device, and a Dev notification opens directly in the Dev tab.
 
+The switch stays visible below the header as you scroll, on desktop and mobile. Each tab shows that profile's **Needs attention** count, including zero; counts above 99 appear as **99+**. These badges count open Inbox items, excluding snoozed and Promotional items, regardless of the category or status view you are browsing. Both profiles' badges update on live item changes and when you reopen or return to the PWA, so you can check the other profile without switching to it.
+
 The two Gmail authorizations are isolated: connecting Dev does not replace Personal. Both remain read-only, but authorization alone does not enable monitoring. After connecting either account, select at least one Gmail label or sender for that profile. Dev begins with editable semantic monitors for security/access changes, failed builds or deployments, store/policy actions, direct review requests and actionable user reports. These monitors are scoped to Dev and are not copied to Personal; delete, disable or tune them from **Rules** without affecting Personal.
 
 ## Choose monitored sources
