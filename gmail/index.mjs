@@ -11,6 +11,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const dataDir = process.env.DATA_DIR || path.join(here, 'data');
 fs.mkdirSync(dataDir, { recursive: true, mode: 0o700 });
 const config = {
+  profileId: process.env.GMAIL_PROFILE_ID === 'dev' ? 'dev' : 'personal',
   host: process.env.HOST || '127.0.0.1',
   port: Number(process.env.PORT || 4393),
   appUrl: (process.env.APP_INTERNAL_URL || 'http://127.0.0.1:4391').replace(/\/+$/u, ''),

@@ -7,12 +7,24 @@ import { evaluateRules, normaliseRule } from './rules.mjs';
 import { extractDueAt } from './dates.mjs';
 
 const now = () => new Date().toISOString();
+const DEFAULT_PROFILE_ID = 'personal';
+const PROFILE_DEFINITIONS = [
+  { id: 'personal', name: 'Personal', description: 'Personal WhatsApp and Gmail attention.' },
+  { id: 'dev', name: 'Dev', description: 'Development projects, services, and store activity.' },
+];
 
 export function openDatabase(dataDir) {
   fs.mkdirSync(dataDir, { recursive: true, mode: 0o700 });
   const db = new DatabaseSync(path.join(dataDir, 'threadmark.sqlite'));
   db.exec('PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;');
   db.exec(`
+    CREATE TABLE IF NOT EXISTS profiles (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL
+    );
     CREATE TABLE IF NOT EXISTS devices (
       id TEXT PRIMARY KEY,
       token_hash TEXT NOT NULL UNIQUE,
@@ -120,7 +132,10 @@ export function openDatabase(dataDir) {
     db.exec("ALTER TABLE groups ADD COLUMN kind TEXT NOT NULL DEFAULT 'group' CHECK(kind IN ('group','contact'))");
   }
   ensureSourceKinds(db);
-  db.exec('CREATE INDEX IF NOT EXISTS groups_kind_idx ON groups(kind, selected, name)');
+  ensureProfileSchema(db);
+  seedProfiles(db);
+  seedDevRules(db);
+  db.exec('CREATE INDEX IF NOT EXISTS groups_kind_idx ON groups(profile_id, kind, selected, name)');
   const unresolved = db.prepare(`SELECT id, name FROM groups
     WHERE kind='contact' AND selected=0 AND id LIKE '%@lid'
     AND NOT EXISTS (SELECT 1 FROM messages WHERE messages.group_id=groups.id)`).all();
@@ -136,9 +151,13 @@ export class ThreadmarkStore {
     this.db = db;
   }
 
+  listProfiles() {
+    return this.db.prepare('SELECT id, name, description FROM profiles ORDER BY sort_order, name COLLATE NOCASE').all();
+  }
+
   upsertGroups(groups) {
-    const statement = this.db.prepare(`INSERT INTO groups (id, name, participant_count, selected, updated_at, kind)
-      VALUES (?, ?, ?, 0, ?, 'group')
+    const statement = this.db.prepare(`INSERT INTO groups (id, name, participant_count, selected, updated_at, kind, profile_id)
+      VALUES (?, ?, ?, 0, ?, 'group', 'personal')
       ON CONFLICT(id) DO UPDATE SET name=excluded.name,
         participant_count=excluded.participant_count, updated_at=excluded.updated_at, kind='group'`);
     const timestamp = now();
@@ -156,9 +175,9 @@ export class ThreadmarkStore {
     return this.listGroups();
   }
 
-  listGroups() {
+  listGroups(profileId = DEFAULT_PROFILE_ID) {
     return this.db.prepare(`SELECT id, name, participant_count, selected, updated_at
-      FROM groups WHERE kind='group' ORDER BY selected DESC, name COLLATE NOCASE`).all()
+      FROM groups WHERE profile_id=? AND kind='group' ORDER BY selected DESC, name COLLATE NOCASE`).all(validProfileId(profileId))
       .map((row) => ({ ...row, selected: Boolean(row.selected) }));
   }
 
@@ -168,8 +187,8 @@ export class ThreadmarkStore {
   }
 
   upsertContacts(contacts) {
-    const statement = this.db.prepare(`INSERT INTO groups (id, name, participant_count, selected, updated_at, kind)
-      VALUES (?, ?, 0, 0, ?, 'contact')
+    const statement = this.db.prepare(`INSERT INTO groups (id, name, participant_count, selected, updated_at, kind, profile_id)
+      VALUES (?, ?, 0, 0, ?, 'contact', 'personal')
       ON CONFLICT(id) DO UPDATE SET name=CASE
         WHEN excluded.name LIKE '+%' AND groups.name NOT LIKE '+%' THEN groups.name
         ELSE excluded.name END, updated_at=excluded.updated_at, kind='contact'`);
@@ -188,9 +207,9 @@ export class ThreadmarkStore {
     return this.listContacts();
   }
 
-  listContacts() {
+  listContacts(profileId = DEFAULT_PROFILE_ID) {
     return this.db.prepare(`SELECT id, name, selected, updated_at
-      FROM groups WHERE kind='contact' ORDER BY selected DESC, name COLLATE NOCASE`).all()
+      FROM groups WHERE profile_id=? AND kind='contact' ORDER BY selected DESC, name COLLATE NOCASE`).all(validProfileId(profileId))
       .map((row) => ({ ...row, selected: Boolean(row.selected) }));
   }
 
@@ -199,56 +218,58 @@ export class ThreadmarkStore {
       .run(selected ? 1 : 0, now(), id).changes === 1;
   }
 
-  upsertGmailSources(sources) {
-    const statement = this.db.prepare(`INSERT INTO groups (id, name, participant_count, selected, updated_at, kind)
-      VALUES (?, ?, 0, 0, ?, ?)
+  upsertGmailSources(sources, profileId = DEFAULT_PROFILE_ID) {
+    const profile = validProfileId(profileId);
+    const statement = this.db.prepare(`INSERT INTO groups (id, name, participant_count, selected, updated_at, kind, profile_id)
+      VALUES (?, ?, 0, 0, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET name=excluded.name, updated_at=excluded.updated_at, kind=excluded.kind`);
     const timestamp = now();
     this.db.exec('BEGIN IMMEDIATE');
     try {
       for (const source of sources.slice(0, 10_000)) {
-        if (!validGmailSource(source)) continue;
-        statement.run(source.id, String(source.name).slice(0, 240), timestamp, source.kind);
+        if (!validGmailSource(source, profile)) continue;
+        statement.run(source.id, String(source.name).slice(0, 240), timestamp, source.kind, profile);
       }
       this.db.exec('COMMIT');
     } catch (error) {
       this.db.exec('ROLLBACK');
       throw error;
     }
-    return this.listGmailSources();
+    return this.listGmailSources(profile);
   }
 
-  listGmailSources() {
+  listGmailSources(profileId = DEFAULT_PROFILE_ID) {
     return this.db.prepare(`SELECT id, name, kind, selected, updated_at
-      FROM groups WHERE kind IN ('gmail_label','gmail_sender') ORDER BY selected DESC, kind, name COLLATE NOCASE`).all()
+      FROM groups WHERE profile_id=? AND kind IN ('gmail_label','gmail_sender') ORDER BY selected DESC, kind, name COLLATE NOCASE`).all(validProfileId(profileId))
       .map((row) => ({ ...row, selected: Boolean(row.selected) }));
   }
 
-  selectGmailSource(id, selected) {
-    return this.db.prepare("UPDATE groups SET selected=?, updated_at=? WHERE id=? AND kind IN ('gmail_label','gmail_sender')")
-      .run(selected ? 1 : 0, now(), id).changes === 1;
+  selectGmailSource(id, selected, profileId = DEFAULT_PROFILE_ID) {
+    return this.db.prepare("UPDATE groups SET selected=?, updated_at=? WHERE id=? AND profile_id=? AND kind IN ('gmail_label','gmail_sender')")
+      .run(selected ? 1 : 0, now(), id, validProfileId(profileId)).changes === 1;
   }
 
-  listRules({ enabledOnly = false } = {}) {
-    const where = enabledOnly ? 'WHERE enabled=1' : '';
-    return this.db.prepare(`SELECT * FROM rules ${where} ORDER BY enabled DESC, name COLLATE NOCASE`).all().map(publicRule);
+  listRules({ enabledOnly = false, profileId = DEFAULT_PROFILE_ID } = {}) {
+    const where = enabledOnly ? 'profile_id=? AND enabled=1' : 'profile_id=?';
+    return this.db.prepare(`SELECT * FROM rules WHERE ${where} ORDER BY enabled DESC, name COLLATE NOCASE`).all(validProfileId(profileId)).map(publicRule);
   }
 
-  createRule(input) {
-    if (Number(this.db.prepare('SELECT COUNT(*) AS count FROM rules').get().count) >= 100) {
+  createRule(input, profileId = DEFAULT_PROFILE_ID) {
+    const profile = validProfileId(profileId);
+    if (Number(this.db.prepare('SELECT COUNT(*) AS count FROM rules WHERE profile_id=?').get(profile).count) >= 100) {
       throw Object.assign(new Error('The rule limit of 100 has been reached.'), { status: 400 });
     }
     const rule = normaliseRule(input);
-    if (rule.kind === 'semantic' && this.semanticRuleCount() >= 20) {
+    if (rule.kind === 'semantic' && this.semanticRuleCount(profile) >= 20) {
       throw Object.assign(new Error('The semantic monitor limit of 20 has been reached.'), { status: 400 });
     }
     const id = crypto.randomUUID();
     const timestamp = now();
     this.db.prepare(`INSERT INTO rules
-      (id, name, kind, terms_json, semantic_condition, threshold, category, match_mode, scope, source_ids_json, notify, enabled, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+      (id, name, kind, terms_json, semantic_condition, threshold, category, match_mode, scope, source_ids_json, notify, enabled, created_at, updated_at, profile_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
       id, rule.name, rule.kind, JSON.stringify(rule.terms), rule.condition, rule.threshold, rule.category, rule.matchMode, rule.scope,
-      JSON.stringify(rule.sourceIds), rule.notify ? 1 : 0, rule.enabled ? 1 : 0, timestamp, timestamp,
+      JSON.stringify(rule.sourceIds), rule.notify ? 1 : 0, rule.enabled ? 1 : 0, timestamp, timestamp, profile,
     );
     return this.ruleById(id);
   }
@@ -257,7 +278,7 @@ export class ThreadmarkStore {
     const existing = this.ruleById(id);
     if (!existing) return null;
     const rule = normaliseRule(input, existing);
-    if (rule.kind === 'semantic' && existing.kind !== 'semantic' && this.semanticRuleCount() >= 20) {
+    if (rule.kind === 'semantic' && existing.kind !== 'semantic' && this.semanticRuleCount(existing.profileId) >= 20) {
       throw Object.assign(new Error('The semantic monitor limit of 20 has been reached.'), { status: 400 });
     }
     this.db.prepare(`UPDATE rules SET name=?, kind=?, terms_json=?, semantic_condition=?, threshold=?, category=?, match_mode=?, scope=?,
@@ -285,12 +306,13 @@ export class ThreadmarkStore {
   applicableSemanticRules(message) {
     const source = sourceFromMessage(message);
     if (!source) return [];
-    return this.listRules({ enabledOnly: true }).filter((rule) => rule.kind === 'semantic'
+    const profileId = profileFromMessage(message);
+    return this.listRules({ enabledOnly: true, profileId }).filter((rule) => rule.kind === 'semantic'
       && (rule.scope === 'all' || rule.sourceIds.includes(source.id))).slice(0, 20);
   }
 
-  semanticRuleCount() {
-    return Number(this.db.prepare("SELECT COUNT(*) AS count FROM rules WHERE kind='semantic'").get().count);
+  semanticRuleCount(profileId = DEFAULT_PROFILE_ID) {
+    return Number(this.db.prepare("SELECT COUNT(*) AS count FROM rules WHERE profile_id=? AND kind='semantic'").get(validProfileId(profileId)).count);
   }
 
   settings() {
@@ -326,11 +348,15 @@ export class ThreadmarkStore {
     return next;
   }
 
-  routingConfig() {
+  routingConfig(profileId = DEFAULT_PROFILE_ID) {
+    const profile = validProfileId(profileId);
     const settings = this.settings();
     return {
-      sourceIds: this.db.prepare("SELECT id FROM groups WHERE selected=1 AND kind IN ('group','contact')").all().map((row) => row.id),
-      gmailSources: this.db.prepare("SELECT id, name, kind FROM groups WHERE selected=1 AND kind IN ('gmail_label','gmail_sender')").all(),
+      profileId: profile,
+      sourceIds: profile === DEFAULT_PROFILE_ID
+        ? this.db.prepare("SELECT id FROM groups WHERE profile_id='personal' AND selected=1 AND kind IN ('group','contact')").all().map((row) => row.id)
+        : [],
+      gmailSources: this.db.prepare("SELECT id, name, kind FROM groups WHERE profile_id=? AND selected=1 AND kind IN ('gmail_label','gmail_sender')").all(profile),
       outgoingMonitoring: settings.outgoingMonitoring,
       attachmentProcessing: settings.attachmentProcessing,
     };
@@ -339,13 +365,18 @@ export class ThreadmarkStore {
   detectMessage(message) {
     const source = sourceFromMessage(message);
     if (!source) return [];
-    return [...detectAttention(message), ...evaluateRules(message, source, this.listRules({ enabledOnly: true }))];
+    return [...detectAttention(message), ...evaluateRules(message, source, this.listRules({ enabledOnly: true, profileId: profileFromMessage(message) }))];
   }
 
   isSelectedMessage(message) {
     const source = sourceFromMessage(message);
     if (!source) return { selected: false, source: null };
-    return { selected: Boolean(this.db.prepare('SELECT selected FROM groups WHERE id=? AND kind=?').get(source.id, source.kind)?.selected), source };
+    const profileId = profileFromMessage(message);
+    return {
+      selected: Boolean(this.db.prepare('SELECT selected FROM groups WHERE id=? AND kind=? AND profile_id=?').get(source.id, source.kind, profileId)?.selected),
+      source,
+      profileId,
+    };
   }
 
   ingestMessage(message, additionalDetections = [], options = {}) {
@@ -353,15 +384,16 @@ export class ThreadmarkStore {
     if (!message || typeof message.id !== 'string' || !source) {
       return { accepted: false, reason: 'invalid' };
     }
-    const knownSource = this.db.prepare('SELECT selected FROM groups WHERE id=? AND kind=?').get(source.id, source.kind);
+    const profileId = profileFromMessage(message);
+    const knownSource = this.db.prepare('SELECT selected FROM groups WHERE id=? AND kind=? AND profile_id=?').get(source.id, source.kind, profileId);
     if (!knownSource) {
       if (source.kind === 'group') this.upsertGroups([{ id: source.id, name: source.name, participantCount: 0 }]);
       else if (source.kind === 'contact') this.upsertContacts([{ id: source.id, name: source.name }]);
-      else this.upsertGmailSources([{ id: source.id, name: source.name, kind: source.kind }]);
+      else this.upsertGmailSources([{ id: source.id, name: source.name, kind: source.kind }], profileId);
     } else if (source.kind === 'contact' && source.name) {
       this.upsertContacts([{ id: source.id, name: source.name }]);
     }
-    const selected = this.db.prepare('SELECT selected FROM groups WHERE id=? AND kind=?').get(source.id, source.kind)?.selected;
+    const selected = this.db.prepare('SELECT selected FROM groups WHERE id=? AND kind=? AND profile_id=?').get(source.id, source.kind, profileId)?.selected;
     if (!selected) return { accepted: false, reason: 'not_selected', sourceKind: source.kind };
     const detections = this.enrichDetections(message, source, [
       ...(options.includeLocal === false ? [] : this.detectMessage(message)),
@@ -509,9 +541,9 @@ export class ThreadmarkStore {
     return typeof id === 'string' && Boolean(this.db.prepare('SELECT 1 FROM messages WHERE id=?').get(id));
   }
 
-  listItems({ status = 'open', type = 'all', limit = 100 } = {}) {
-    const clauses = [];
-    const values = [];
+  listItems({ status = 'open', type = 'all', limit = 100, profileId = DEFAULT_PROFILE_ID } = {}) {
+    const clauses = ['g.profile_id=?'];
+    const values = [validProfileId(profileId)];
     const promotional = "COALESCE(json_extract(a.details_json, '$.attentionTriage.disposition'), '')='promotional'";
     if (status === 'open') clauses.push(`a.status='open' AND NOT (${promotional}) AND (a.snoozed_until IS NULL OR datetime(a.snoozed_until)<=datetime('now'))`);
     else if (status === 'snoozed') clauses.push(`a.status='open' AND NOT (${promotional}) AND datetime(a.snoozed_until)>datetime('now')`);
@@ -582,7 +614,7 @@ export class ThreadmarkStore {
     this.db.prepare('UPDATE attention_items SET last_notified_at=? WHERE id=?').run(now(), id);
   }
 
-  digestDue(date = new Date()) {
+  digestDue(date = new Date(), profileId = DEFAULT_PROFILE_ID) {
     const settings = this.settings();
     if (!settings.dailyDigest) return false;
     const parts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', {
@@ -592,19 +624,22 @@ export class ThreadmarkStore {
     const currentMinutes = Number(parts.hour) * 60 + Number(parts.minute);
     const [hour, minute] = settings.digestTime.split(':').map(Number);
     if (currentMinutes < hour * 60 + minute || currentMinutes > hour * 60 + minute + 5) return false;
-    const row = this.db.prepare("SELECT value_json FROM system_state WHERE key='last_digest_day'").get();
+    const row = this.db.prepare('SELECT value_json FROM system_state WHERE key=?').get(`last_digest_day:${validProfileId(profileId)}`);
     return safeJson(row?.value_json).day !== localDay ? localDay : false;
   }
 
-  markDigestSent(day) {
-    this.db.prepare(`INSERT INTO system_state (key, value_json, updated_at) VALUES ('last_digest_day', ?, ?)
-      ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json, updated_at=excluded.updated_at`).run(JSON.stringify({ day }), now());
+  markDigestSent(day, profileId = DEFAULT_PROFILE_ID) {
+    this.db.prepare(`INSERT INTO system_state (key, value_json, updated_at) VALUES (?, ?, ?)
+      ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json, updated_at=excluded.updated_at`)
+      .run(`last_digest_day:${validProfileId(profileId)}`, JSON.stringify({ day }), now());
   }
 
-  summary() {
-    const rows = this.db.prepare(`SELECT type, COUNT(*) AS count FROM attention_items
-      WHERE status='open' AND COALESCE(json_extract(details_json, '$.attentionTriage.disposition'), '')!='promotional'
-      AND (snoozed_until IS NULL OR datetime(snoozed_until)<=datetime('now')) GROUP BY type`).all();
+  summary(profileId = DEFAULT_PROFILE_ID) {
+    const profile = validProfileId(profileId);
+    const rows = this.db.prepare(`SELECT a.type, COUNT(*) AS count FROM attention_items a
+      JOIN messages m ON m.id=a.message_id JOIN groups g ON g.id=m.group_id
+      WHERE g.profile_id=? AND a.status='open' AND COALESCE(json_extract(a.details_json, '$.attentionTriage.disposition'), '')!='promotional'
+      AND (a.snoozed_until IS NULL OR datetime(a.snoozed_until)<=datetime('now')) GROUP BY a.type`).all(profile);
     const summary = { open: 0, payments: 0, meetings: 0, reminders: 0, snoozed: 0, promotional: 0, groups: 0, contacts: 0, gmail: 0 };
     for (const row of rows) {
       summary.open += Number(row.count);
@@ -612,13 +647,14 @@ export class ThreadmarkStore {
       if (row.type === 'meeting') summary.meetings = Number(row.count);
       if (row.type === 'reminder') summary.reminders = Number(row.count);
     }
-    summary.groups = Number(this.db.prepare("SELECT COUNT(*) AS count FROM groups WHERE selected=1 AND kind='group'").get().count);
-    summary.contacts = Number(this.db.prepare("SELECT COUNT(*) AS count FROM groups WHERE selected=1 AND kind='contact'").get().count);
-    summary.gmail = Number(this.db.prepare("SELECT COUNT(*) AS count FROM groups WHERE selected=1 AND kind IN ('gmail_label','gmail_sender')").get().count);
-    summary.snoozed = Number(this.db.prepare(`SELECT COUNT(*) AS count FROM attention_items WHERE status='open'
-      AND COALESCE(json_extract(details_json, '$.attentionTriage.disposition'), '')!='promotional' AND datetime(snoozed_until)>datetime('now')`).get().count);
-    summary.promotional = Number(this.db.prepare(`SELECT COUNT(*) AS count FROM attention_items WHERE status='open'
-      AND json_extract(details_json, '$.attentionTriage.disposition')='promotional'`).get().count);
+    summary.groups = Number(this.db.prepare("SELECT COUNT(*) AS count FROM groups WHERE profile_id=? AND selected=1 AND kind='group'").get(profile).count);
+    summary.contacts = Number(this.db.prepare("SELECT COUNT(*) AS count FROM groups WHERE profile_id=? AND selected=1 AND kind='contact'").get(profile).count);
+    summary.gmail = Number(this.db.prepare("SELECT COUNT(*) AS count FROM groups WHERE profile_id=? AND selected=1 AND kind IN ('gmail_label','gmail_sender')").get(profile).count);
+    summary.snoozed = Number(this.db.prepare(`SELECT COUNT(*) AS count FROM attention_items a JOIN messages m ON m.id=a.message_id JOIN groups g ON g.id=m.group_id
+      WHERE g.profile_id=? AND a.status='open' AND COALESCE(json_extract(a.details_json, '$.attentionTriage.disposition'), '')!='promotional'
+      AND datetime(a.snoozed_until)>datetime('now')`).get(profile).count);
+    summary.promotional = Number(this.db.prepare(`SELECT COUNT(*) AS count FROM attention_items a JOIN messages m ON m.id=a.message_id JOIN groups g ON g.id=m.group_id
+      WHERE g.profile_id=? AND a.status='open' AND json_extract(a.details_json, '$.attentionTriage.disposition')='promotional'`).get(profile).count);
     return summary;
   }
 
@@ -669,9 +705,10 @@ function itemSelect() {
     a.currency, a.confidence, a.priority, a.notify, a.status, a.created_at, a.resolved_at,
     a.snoozed_until, a.last_notified_at, a.feedback, a.feedback_at,
     m.text, m.sender_name, m.sent_at, m.direction, m.media_json, m.external_url,
-    g.id AS source_id, g.name AS source_name, g.kind AS source_kind
+    g.id AS source_id, g.name AS source_name, g.kind AS source_kind, g.profile_id,
+    p.name AS profile_name
     FROM attention_items a JOIN messages m ON m.id=a.message_id
-    JOIN groups g ON g.id=m.group_id`;
+    JOIN groups g ON g.id=m.group_id JOIN profiles p ON p.id=g.profile_id`;
 }
 
 function publicItem(row) {
@@ -700,6 +737,7 @@ function publicItem(row) {
     direction: row.direction || 'incoming',
     media: safeJson(row.media_json),
     externalUrl: row.external_url || null,
+    profile: { id: row.profile_id || DEFAULT_PROFILE_ID, name: row.profile_name || 'Personal' },
     source: { id: row.source_id, name: row.source_name, kind: row.source_kind },
     group: { id: row.source_id, name: row.source_name, kind: row.source_kind },
   };
@@ -721,7 +759,52 @@ function publicRule(row) {
     enabled: Boolean(row.enabled),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    profileId: row.profile_id || DEFAULT_PROFILE_ID,
   };
+}
+
+function ensureProfileSchema(db) {
+  const sourceColumns = db.prepare('PRAGMA table_info(groups)').all();
+  if (!sourceColumns.some((column) => column.name === 'profile_id')) {
+    db.exec("ALTER TABLE groups ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'personal'");
+  }
+  const ruleColumns = db.prepare('PRAGMA table_info(rules)').all();
+  if (!ruleColumns.some((column) => column.name === 'profile_id')) {
+    db.exec("ALTER TABLE rules ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'personal'");
+  }
+  db.exec('CREATE INDEX IF NOT EXISTS rules_profile_idx ON rules(profile_id, enabled, name)');
+}
+
+function seedProfiles(db) {
+  const insert = db.prepare(`INSERT INTO profiles (id, name, description, sort_order, created_at)
+    VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET name=excluded.name, description=excluded.description, sort_order=excluded.sort_order`);
+  const timestamp = now();
+  PROFILE_DEFINITIONS.forEach((profile, index) => insert.run(profile.id, profile.name, profile.description, index, timestamp));
+}
+
+function seedDevRules(db) {
+  const marker = db.prepare("SELECT 1 FROM system_state WHERE key='dev_rules_seeded_v1'").get();
+  if (marker) return;
+  const existing = Number(db.prepare("SELECT COUNT(*) AS count FROM rules WHERE profile_id='dev'").get().count);
+  if (existing) {
+    db.prepare("INSERT INTO system_state (key, value_json, updated_at) VALUES ('dev_rules_seeded_v1', '{}', ?)").run(now());
+    return;
+  }
+  const presets = [
+    ['Dev security or access change', 'A security, authentication, permission, key, token, vulnerability, or account-access change affects a development project or service I own.', 0.8],
+    ['Build or deployment failure', 'A build, test, deployment, release, production service, certificate, domain, or integration failed or is blocked and requires intervention.', 0.82],
+    ['Store or policy action', 'An app store, developer platform, or service provider requires action to avoid rejection, suspension, expiration, policy non-compliance, or service interruption.', 0.8],
+    ['Review or reply requested', 'A person directly asks me to review code, make a technical decision, provide information, or reply about a development project.', 0.82],
+    ['User issue needs attention', 'A real user or tester reports a bug, failed purchase, refund problem, account problem, or other product issue that deserves a response.', 0.82],
+  ];
+  const insert = db.prepare(`INSERT INTO rules
+    (id, name, kind, terms_json, semantic_condition, threshold, category, match_mode, scope, source_ids_json, notify, enabled, created_at, updated_at, profile_id)
+    VALUES (?, ?, 'semantic', '[]', ?, ?, 'reminder', 'any', 'all', '[]', 1, 1, ?, ?, 'dev')`);
+  const timestamp = now();
+  for (const [name, condition, threshold] of presets) {
+    insert.run(`dev-preset-${crypto.createHash('sha256').update(name).digest('hex').slice(0, 16)}`, name, condition, threshold, timestamp, timestamp);
+  }
+  db.prepare("INSERT INTO system_state (key, value_json, updated_at) VALUES ('dev_rules_seeded_v1', '{}', ?)").run(timestamp);
 }
 
 function ensureRulesSchema(db) {
@@ -821,9 +904,10 @@ function validContact(contact) {
   return contact && typeof contact.id === 'string' && isContactId(contact.id) && typeof contact.name === 'string';
 }
 
-function validGmailSource(source) {
+function validGmailSource(source, profileId = DEFAULT_PROFILE_ID) {
+  const prefix = gmailSourcePrefix(profileId, source?.kind);
   return source && ['gmail_label', 'gmail_sender'].includes(source.kind)
-    && typeof source.id === 'string' && source.id.startsWith(source.kind === 'gmail_label' ? 'gmail:label:' : 'gmail:sender:')
+    && typeof source.id === 'string' && source.id.startsWith(prefix)
     && typeof source.name === 'string' && source.name.trim();
 }
 
@@ -839,8 +923,23 @@ function sourceFromMessage(message) {
   const name = String(message.sourceName || message.groupName || message.senderName || (kind === 'group' ? 'WhatsApp group' : contactLabel(id)));
   if (kind === 'group' && validGroup({ id, name })) return { id, name, kind };
   if (kind === 'contact' && validContact({ id, name })) return { id, name, kind };
-  if (validGmailSource({ id, name, kind })) return { id, name, kind };
+  if (validGmailSource({ id, name, kind }, profileFromMessage(message))) return { id, name, kind };
   return null;
+}
+
+function profileFromMessage(message) {
+  if (['group', 'contact'].includes(message?.sourceKind)) return DEFAULT_PROFILE_ID;
+  const requested = String(message?.profileId || DEFAULT_PROFILE_ID);
+  return validProfileId(requested);
+}
+
+function validProfileId(value) {
+  return PROFILE_DEFINITIONS.some((profile) => profile.id === value) ? value : DEFAULT_PROFILE_ID;
+}
+
+function gmailSourcePrefix(profileId, kind) {
+  const namespace = validProfileId(profileId) === DEFAULT_PROFILE_ID ? 'gmail:' : `gmail:${validProfileId(profileId)}:`;
+  return `${namespace}${kind === 'gmail_label' ? 'label' : 'sender'}:`;
 }
 
 function contactLabel(id) {

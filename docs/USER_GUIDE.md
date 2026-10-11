@@ -10,18 +10,24 @@ Both connections are read-only by design: Threadmark does not send replies or em
 2. Open the invitation in the browser you want to register.
 3. Give the device a recognizable name and choose **Activate this device**.
 4. Open **Connect**, then link WhatsApp using a QR code or phone-number pairing code.
-5. Optionally connect personal Gmail. The administrator must configure Google OAuth first.
+5. Optionally connect Personal Gmail, switch to **Dev**, and connect the development Gmail account. The administrator must configure Google OAuth first.
 6. Open **Chats** and enable only the groups, people, Gmail labels or Gmail senders Threadmark should monitor.
 7. If wanted, open **Settings** and enable attachment reading, context-aware updates, reply monitoring or the daily digest.
 8. Enable browser notifications from the **Enable alerts** button.
 
 Install the PWA from the browser menu for a full-screen experience and more reliable notification handling. HTTPS is required outside localhost.
 
+## Personal and Dev profiles
+
+Use the **Personal / Dev** switch above the inbox. Each profile has its own feed, counters, Done/Snoozed/Promotional views, Gmail sources and rules. WhatsApp belongs to Personal. The active profile is remembered on the device, and a Dev notification opens directly in the Dev tab.
+
+The two Gmail authorizations are isolated: connecting Dev does not replace Personal. Both remain read-only and start monitoring from the moment each account is connected. Dev begins with editable semantic monitors for security/access changes, failed builds or deployments, store/policy actions, direct review requests and actionable user reports. Delete, disable or tune them from **Rules** without affecting Personal.
+
 ## Choose monitored sources
 
 Every source is off by default. Selecting one affects only messages received afterward; Threadmark does not scan older WhatsApp or Gmail history.
 
-In **Chats**:
+In **Chats** for the selected profile:
 
 - Switch between **Groups**, **People**, **Gmail labels** and **Senders**.
 - Search by name or phone number.
@@ -74,7 +80,7 @@ Choose **Enable alerts** and approve the browser permission. Notifications requi
 - an operating system that allows notifications for that browser;
 - a rule or detector with alerts enabled.
 
-Threadmark sends notifications for newly matched Inbox items and due or expired snoozes. Items routed to Promotional are quiet. Urgent detections use an urgent title. The app icon is used as both notification icon and badge. On platforms that support Web Notification actions, **Done** completes the item directly from the notification and **Actions** opens the matching card with its action menu expanded. If direct completion fails, Threadmark opens the item instead.
+Threadmark sends notifications for newly matched Inbox items and due or expired snoozes. Items routed to Promotional are quiet. Dev notifications are prefixed with **Dev** and open that profile; the operating system still groups both profiles under the single Threadmark PWA. Urgent detections use an urgent title. The app icon is used as both notification icon and badge. On platforms that support Web Notification actions, **Done** completes the item directly from the notification and **Actions** opens the matching card with its action menu expanded. If direct completion fails, Threadmark opens the item instead.
 
 The optional daily digest is configured under **Settings**. It reports the number of open payments, meetings and reminders at the selected local time.
 

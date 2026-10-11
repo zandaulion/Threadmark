@@ -13,6 +13,7 @@ Environment=HOST=0.0.0.0
 Environment=PORT=4393
 Environment=DATA_DIR=/data
 Environment=APP_INTERNAL_URL=http://threadmark-app:4391
+Environment=GMAIL_PROFILE_ID=personal
 NoNewPrivileges=true
 DropCapability=all
 

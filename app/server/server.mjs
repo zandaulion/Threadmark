@@ -95,7 +95,7 @@ export function createThreadmarkServer(options = {}) {
 
       if (pathname.startsWith('/internal/')) {
         if (!constantTimeTokenMatch(req.headers['x-bridge-token'], config.bridgeToken)) return json(res, 404, { error: 'not_found' });
-        if (pathname === '/internal/routing' && req.method === 'GET') return json(res, 200, store.routingConfig());
+        if (pathname === '/internal/routing' && req.method === 'GET') return json(res, 200, store.routingConfig(profileIdFrom(url.searchParams.get('profile'))));
         if (pathname === '/internal/groups' && req.method === 'POST') {
           const body = await readJson(req, 1_000_000);
           const groups = store.upsertGroups(Array.isArray(body.groups) ? body.groups : []);
@@ -110,8 +110,9 @@ export function createThreadmarkServer(options = {}) {
         }
         if (pathname === '/internal/gmail/sources' && req.method === 'POST') {
           const body = await readJson(req, 1_000_000);
-          const sources = store.upsertGmailSources(Array.isArray(body.sources) ? body.sources : []);
-          broadcast('gmail-sources', sources);
+          const profileId = profileIdFrom(body.profileId);
+          const sources = store.upsertGmailSources(Array.isArray(body.sources) ? body.sources : [], profileId);
+          broadcast('gmail-sources', { profileId, sources });
           return json(res, 200, { accepted: sources.length });
         }
         if (pathname === '/internal/events' && req.method === 'POST') {
@@ -207,7 +208,9 @@ export function createThreadmarkServer(options = {}) {
       if (pathname.startsWith('/api/')) {
         const device = auth.deviceForToken(tokenFromCookie(req.headers.cookie));
         if (!device) return json(res, 401, { error: 'not_registered' });
-        if (pathname === '/api/summary' && req.method === 'GET') return json(res, 200, store.summary());
+        const profileId = profileIdFrom(url.searchParams.get('profile'));
+        if (pathname === '/api/profiles' && req.method === 'GET') return json(res, 200, { profiles: store.listProfiles() });
+        if (pathname === '/api/summary' && req.method === 'GET') return json(res, 200, store.summary(profileId));
         if (pathname === '/api/settings' && req.method === 'GET') return json(res, 200, store.settings());
         if (pathname === '/api/settings' && req.method === 'PUT') {
           const settings = store.updateSettings(await readJson(req));
@@ -223,11 +226,11 @@ export function createThreadmarkServer(options = {}) {
         if (pathname === '/api/feed' && req.method === 'GET') {
           const status = ['open', 'snoozed', 'promotional', 'done', 'all'].includes(url.searchParams.get('status')) ? url.searchParams.get('status') : 'open';
           const type = ['payment', 'meeting', 'reminder', 'all'].includes(url.searchParams.get('type')) ? url.searchParams.get('type') : 'all';
-          return json(res, 200, { items: store.listItems({ status, type }) });
+          return json(res, 200, { items: store.listItems({ status, type, profileId }) });
         }
-        if (pathname === '/api/groups' && req.method === 'GET') return json(res, 200, { groups: store.listGroups() });
-        if (pathname === '/api/contacts' && req.method === 'GET') return json(res, 200, { contacts: store.listContacts() });
-        if (pathname === '/api/gmail/sources' && req.method === 'GET') return json(res, 200, { sources: store.listGmailSources() });
+        if (pathname === '/api/groups' && req.method === 'GET') return json(res, 200, { groups: store.listGroups(profileId) });
+        if (pathname === '/api/contacts' && req.method === 'GET') return json(res, 200, { contacts: store.listContacts(profileId) });
+        if (pathname === '/api/gmail/sources' && req.method === 'GET') return json(res, 200, { sources: store.listGmailSources(profileId) });
         if (pathname === '/api/contacts/lookup' && req.method === 'POST') {
           const body = await readJson(req);
           const digits = String(body.phoneNumber || '').replace(/\D/g, '');
@@ -255,10 +258,10 @@ export function createThreadmarkServer(options = {}) {
             broadcast('contacts', contacts);
           });
         }
-        if (pathname === '/api/rules' && req.method === 'GET') return json(res, 200, { rules: store.listRules() });
+        if (pathname === '/api/rules' && req.method === 'GET') return json(res, 200, { rules: store.listRules({ profileId }) });
         if (pathname === '/api/rules' && req.method === 'POST') {
-          const rule = store.createRule(await readJson(req));
-          broadcast('rules', store.listRules());
+          const rule = store.createRule(await readJson(req), profileId);
+          broadcast('rules', { profileId, rules: store.listRules({ profileId }) });
           return json(res, 201, rule);
         }
         if (pathname === '/api/rules/test' && req.method === 'POST') {
@@ -271,21 +274,21 @@ export function createThreadmarkServer(options = {}) {
           }
           return json(res, 200, testRule(rule, body.text));
         }
-        const ruleAction = pathname.match(/^\/api\/rules\/([a-f0-9-]+)(?:\/(enabled))?$/u);
+        const ruleAction = pathname.match(/^\/api\/rules\/([a-z0-9-]+)(?:\/(enabled))?$/u);
         if (ruleAction && req.method === 'PUT' && !ruleAction[2]) {
           const rule = store.updateRule(ruleAction[1], await readJson(req));
-          if (rule) broadcast('rules', store.listRules());
+          if (rule) broadcast('rules', { profileId: rule.profileId, rules: store.listRules({ profileId: rule.profileId }) });
           return json(res, rule ? 200 : 404, rule || { error: 'not_found' });
         }
         if (ruleAction && req.method === 'POST' && ruleAction[2] === 'enabled') {
           const body = await readJson(req);
           const rule = store.setRuleEnabled(ruleAction[1], Boolean(body.enabled));
-          if (rule) broadcast('rules', store.listRules());
+          if (rule) broadcast('rules', { profileId: rule.profileId, rules: store.listRules({ profileId: rule.profileId }) });
           return json(res, rule ? 200 : 404, rule || { error: 'not_found' });
         }
         if (ruleAction && req.method === 'DELETE' && !ruleAction[2]) {
           const deleted = store.deleteRule(ruleAction[1]);
-          if (deleted) broadcast('rules', store.listRules());
+          if (deleted) broadcast('rules', { profileId, rules: store.listRules({ profileId }) });
           return json(res, deleted ? 200 : 404, deleted ? { ok: true } : { error: 'not_found' });
         }
         const groupSelection = pathname.match(/^\/api\/groups\/(.+)\/selection$/u);
@@ -308,8 +311,8 @@ export function createThreadmarkServer(options = {}) {
         if (gmailSelection && req.method === 'POST') {
           const body = await readJson(req);
           const id = decodeURIComponent(gmailSelection[1]);
-          const changed = store.selectGmailSource(id, Boolean(body.selected));
-          if (changed) broadcast('gmail-sources', store.listGmailSources());
+          const changed = store.selectGmailSource(id, Boolean(body.selected), profileId);
+          if (changed) broadcast('gmail-sources', { profileId, sources: store.listGmailSources(profileId) });
           return json(res, changed ? 200 : 404, changed ? { ok: true } : { error: 'not_found' });
         }
         const itemStatus = pathname.match(/^\/api\/items\/(.+)\/status$/u);
@@ -368,14 +371,14 @@ export function createThreadmarkServer(options = {}) {
           return proxyAsset(res, `${config.bridgeControlUrl}/qr.svg`, config.bridgeToken, 'image/svg+xml');
         }
         if (pathname === '/api/gmail/status' && req.method === 'GET') {
-          return proxyJson(res, `${config.gmailControlUrl}/status`, 'GET', null, config.bridgeToken,
-            { configured: false, connection: 'not_configured', account: null, degraded: true });
+          return proxyJson(res, `${gmailControlUrl(config, profileId)}/status`, 'GET', null, config.bridgeToken,
+            { configured: false, connection: 'not_configured', account: null, profileId, degraded: true });
         }
         if (pathname === '/api/gmail/connect' && req.method === 'POST') {
-          return proxyJson(res, `${config.gmailControlUrl}/oauth/start`, 'POST', {}, config.bridgeToken);
+          return proxyJson(res, `${gmailControlUrl(config, profileId)}/oauth/start`, 'POST', {}, config.bridgeToken);
         }
         if (pathname === '/api/gmail/disconnect' && req.method === 'POST') {
-          return proxyJson(res, `${config.gmailControlUrl}/disconnect`, 'POST', {}, config.bridgeToken);
+          return proxyJson(res, `${gmailControlUrl(config, profileId)}/disconnect`, 'POST', {}, config.bridgeToken);
         }
         return json(res, 404, { error: 'not_found' });
       }
@@ -390,9 +393,9 @@ export function createThreadmarkServer(options = {}) {
 
   const scheduler = setInterval(() => {
     for (const item of store.dueNotifications()) void notifyAndMark(item);
-    const day = store.digestDue();
-    if (day) {
-      void push.notifyDigest(store.summary()).then(() => store.markDigestSent(day));
+    for (const profile of store.listProfiles()) {
+      const day = store.digestDue(new Date(), profile.id);
+      if (day) void push.notifyDigest(store.summary(profile.id), profile).then(() => store.markDigestSent(day, profile.id));
     }
     store.prune(config.retentionDays);
   }, 60_000);
@@ -437,13 +440,15 @@ async function proxyJson(res, target, method, body, token, fallback = null, onSu
 
 async function handleGmailCallback(res, config, url) {
   const destination = new URL(config.publicBaseUrl || '/','http://local.invalid');
+  const profileId = profileIdFrom(String(url.searchParams.get('state') || '').split('.', 1)[0]);
+  destination.searchParams.set('profile', profileId);
   destination.searchParams.set('gmail', 'error');
   if (url.searchParams.get('error')) {
     destination.searchParams.set('reason', url.searchParams.get('error'));
     return redirect(res, publicLocation(destination, config));
   }
   try {
-    const response = await fetch(`${config.gmailControlUrl}/oauth/callback`, {
+    const response = await fetch(`${gmailControlUrl(config, profileId)}/oauth/callback`, {
       method: 'POST',
       headers: { 'x-bridge-token': config.bridgeToken, 'content-type': 'application/json' },
       body: JSON.stringify({ code: url.searchParams.get('code'), state: url.searchParams.get('state') }),
@@ -456,6 +461,14 @@ async function handleGmailCallback(res, config, url) {
     destination.searchParams.set('reason', 'oauth_failed');
   }
   return redirect(res, publicLocation(destination, config));
+}
+
+function profileIdFrom(value) {
+  return value === 'dev' ? 'dev' : 'personal';
+}
+
+function gmailControlUrl(config, profileId) {
+  return profileIdFrom(profileId) === 'dev' ? config.gmailDevControlUrl : config.gmailControlUrl;
 }
 
 function publicLocation(url, config) {
@@ -480,7 +493,11 @@ async function proxyAsset(res, target, token, contentType) {
 
 function serveStatic(req, res, pathname, webDir, webHash) {
   if (!['GET', 'HEAD'].includes(req.method)) return false;
-  const clean = pathname === '/' ? '/index.html' : pathname === '/bust' ? '/bust.html' : pathname;
+  const publicPages = new Map([
+    ['/about', '/about.html'],
+    ['/privacy', '/privacy.html'],
+  ]);
+  const clean = pathname === '/' ? '/index.html' : pathname === '/bust' ? '/bust.html' : publicPages.get(pathname) || pathname;
   let decoded;
   try { decoded = decodeURIComponent(clean); } catch { return false; }
   if (decoded.includes('..') || decoded.includes('\\') || decoded.split('/').some((part) => part.startsWith('.'))) return false;

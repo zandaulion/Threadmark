@@ -25,6 +25,7 @@
       <p class="form-error" id="invite-error" role="alert"></p>
       <button class="button primary wide" type="submit">Activate this device</button>
       <p class="privacy-note">Your invitation becomes unusable after activation. Revoke this device at any time from the invite console.</p>
+      <p class="privacy-note"><a href="/about">About Threadmark</a> · <a href="/privacy">Privacy policy</a></p>
     </form>
   </section>
 
@@ -49,11 +50,15 @@
 
     <main class="shell">
       <section class="main-column">
+        <div class="profile-tabs" id="profile-tabs" role="tablist" aria-label="Attention profile">
+          <button class="profile-tab active" type="button" role="tab" aria-selected="true" data-profile="personal"><span aria-hidden="true">●</span> Personal</button>
+          <button class="profile-tab" type="button" role="tab" aria-selected="false" data-profile="dev"><span aria-hidden="true">⌘</span> Dev</button>
+        </div>
         <div class="intro-row">
           <div>
             <p class="eyebrow" id="today-label">Today</p>
-            <h1>Your attention, distilled.</h1>
-            <p class="lede">Invoices, payments, meetings, and reminders from the conversations you chose—nothing else.</p>
+            <h1 id="profile-heading">Your attention, distilled.</h1>
+            <p class="lede" id="profile-lede">Invoices, payments, meetings, and reminders from the conversations you chose—nothing else.</p>
           </div>
           <button class="button alerts-button" id="alerts-button" type="button">Enable alerts</button>
         </div>
@@ -99,7 +104,7 @@
       <aside class="side-column">
         <section class="side-card connection-card">
           <div class="side-card-head"><p class="eyebrow">Live sources</p><span class="mini-state" id="mini-state">Offline</span></div>
-          <h2>WhatsApp + Gmail</h2>
+          <h2 id="live-sources-title">WhatsApp + Gmail</h2>
           <p id="bridge-copy">Checking the linked-device connection.</p>
           <p class="connection-secondary" id="gmail-bridge-copy">Checking Gmail.</p>
           <button class="button dark wide" id="pair-button" type="button">Manage connections</button>
@@ -254,7 +259,7 @@
         <div><p class="eyebrow">Private connectors</p><h2>Connections</h2></div>
         <button class="close-button" id="pair-close" type="button" aria-label="Close">×</button>
       </div>
-      <section class="connection-section">
+      <section class="connection-section" id="whatsapp-connection-section">
         <div class="connection-section-head"><div><p class="eyebrow">WhatsApp</p><h3>Linked device</h3></div><span class="mini-state" id="whatsapp-dialog-state">Offline</span></div>
         <div id="pair-connected" hidden>
           <div class="connected-seal">✓</div>
@@ -283,9 +288,9 @@
         <p class="warning-note">This uses an unofficial linked-device connector. Keep Threadmark read-only and disconnect it from WhatsApp if anything looks unexpected.</p>
       </section>
       <section class="connection-section gmail-connection">
-        <div class="connection-section-head"><div><p class="eyebrow">Gmail</p><h3>Read-only mailbox</h3></div><span class="mini-state" id="gmail-dialog-state">Checking</span></div>
+        <div class="connection-section-head"><div><p class="eyebrow">Gmail</p><h3 id="gmail-connection-title">Personal mailbox</h3></div><span class="mini-state" id="gmail-dialog-state">Checking</span></div>
         <p class="modal-copy" id="gmail-dialog-copy">Threadmark checks new messages from the labels and senders you enable.</p>
-        <button class="button dark wide" id="gmail-connect-button" type="button">Connect personal Gmail</button>
+        <button class="button dark wide" id="gmail-connect-button" type="button">Connect Personal Gmail</button>
         <button class="text-button" id="gmail-disconnect-button" type="button" hidden>Disconnect Gmail</button>
         <p class="privacy-note">Threadmark cannot send, delete, modify, or mark email as read. Attachments are not downloaded.</p>
       </section>

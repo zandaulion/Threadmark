@@ -49,8 +49,9 @@ The create response includes the one-time code and URL. Never expose the admin t
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `GET` | `/api/summary` | Open category/source counts |
-| `GET` | `/api/feed?status=&type=` | List up to 100 attention items |
+| `GET` | `/api/profiles` | List attention profiles |
+| `GET` | `/api/summary?profile=` | Open category/source counts for Personal or Dev |
+| `GET` | `/api/feed?profile=&status=&type=` | List up to 100 attention items for one profile |
 | `GET` | `/api/settings` | Read preferences |
 | `PUT` | `/api/settings` | Replace supported preferences |
 | `POST` | `/api/items/:id/status` | Set `{status:"open"|"done"}` |
@@ -59,7 +60,7 @@ The create response includes the one-time code and URL. Never expose the admin t
 | `GET` | `/api/items/:id/calendar.ics` | Download calendar event if dated |
 | `GET` | `/api/stream` | Server-sent events |
 
-Feed `status` is `open`, `snoozed`, `promotional`, `done` or `all`. Feed `type` is `payment`, `meeting`, `reminder` or `all`. Promotional items remain `status: "open"` internally and are selected by `details.attentionTriage.disposition`; this preserves the existing status/action model while keeping them out of ordinary open and snoozed feeds.
+`profile` is `personal` by default or `dev`. Feed `status` is `open`, `snoozed`, `promotional`, `done` or `all`. Feed `type` is `payment`, `meeting`, `reminder` or `all`. Promotional items remain `status: "open"` internally and are selected by `details.attentionTriage.disposition`; this preserves the existing status/action model while keeping them out of ordinary open and snoozed feeds.
 
 Settings body:
 
@@ -87,8 +88,8 @@ SSE event names are `ready`, `item`, `groups`, `contacts`, `gmail-sources`, `rul
 | `POST` | `/api/contacts/:id/selection` | Set `{selected}` |
 | `POST` | `/api/contacts/lookup` | Resolve `{phoneNumber}` through local bridge |
 | `POST` | `/api/contacts/import` | Resolve up to 100 `{phoneNumber,name}` entries |
-| `GET` | `/api/gmail/sources` | Known Gmail labels/senders and selection state |
-| `POST` | `/api/gmail/sources/:id/selection` | Set `{selected}` |
+| `GET` | `/api/gmail/sources?profile=` | Known Gmail labels/senders for one profile |
+| `POST` | `/api/gmail/sources/:id/selection?profile=` | Set `{selected}` for one profile |
 
 Selections affect only new events. Phone numbers must contain 8–15 digits after punctuation is removed.
 
@@ -96,8 +97,8 @@ Selections affect only new events. Phone numbers must contain 8–15 digits afte
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `GET` | `/api/rules` | List rules |
-| `POST` | `/api/rules` | Create a rule |
+| `GET` | `/api/rules?profile=` | List rules for one profile |
+| `POST` | `/api/rules?profile=` | Create a rule in one profile |
 | `PUT` | `/api/rules/:id` | Update a rule |
 | `DELETE` | `/api/rules/:id` | Delete a rule |
 | `POST` | `/api/rules/:id/enabled` | Set `{enabled}` |
@@ -153,19 +154,19 @@ Limits are 100 total rules, 20 semantic rules, 30 phrase terms and 200 source ID
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `GET` | `/api/gmail/status` | OAuth/synchronization state |
-| `POST` | `/api/gmail/connect` | Create a single-use Google authorization URL |
+| `GET` | `/api/gmail/status?profile=` | OAuth/synchronization state for Personal or Dev |
+| `POST` | `/api/gmail/connect?profile=` | Create a single-use Google authorization URL for one profile |
 | `GET` | `/api/gmail/oauth/callback` | Google redirect; protected by OAuth state rather than the Strict cookie |
-| `POST` | `/api/gmail/disconnect` | Revoke access and remove local OAuth credentials |
+| `POST` | `/api/gmail/disconnect?profile=` | Revoke access and remove that profile's local OAuth credentials |
 
 ## Internal bridge API
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `GET` | `/internal/routing` | Selected source IDs and media/outgoing flags |
+| `GET` | `/internal/routing?profile=` | Selected source IDs and media/outgoing flags for one connector profile |
 | `POST` | `/internal/groups` | Upsert `{groups:[...]}` metadata |
 | `POST` | `/internal/contacts` | Upsert `{contacts:[...]}` metadata |
-| `POST` | `/internal/gmail/sources` | Upsert `{sources:[...]}` label/sender metadata |
+| `POST` | `/internal/gmail/sources` | Upsert `{profileId,sources:[...]}` label/sender metadata |
 | `POST` | `/internal/events` | Ingest one normalized message |
 | `POST` | `/internal/status` | Store and broadcast bridge state |
 
@@ -174,6 +175,7 @@ Example normalized event:
 ```json
 {
   "id": "stable-connector-event-id",
+  "profileId": "personal",
   "sourceId": "15550100001@s.whatsapp.net",
   "sourceName": "Example person",
   "sourceKind": "contact",

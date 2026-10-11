@@ -28,7 +28,7 @@ The images below are captured from the real PWA using a temporary database and e
 ## Architecture
 
 - `threadmark-bridge`: Baileys linked-device client, QR/pairing-code control endpoint and persistent delivery outbox.
-- `threadmark-gmail`: Gmail OAuth client, label/sender discovery, incremental polling and persistent delivery outbox.
+- `threadmark-gmail` / `threadmark-gmail-dev`: isolated Gmail OAuth clients with separate credentials, checkpoints and durable outboxes.
 - `threadmark-app`: static PWA, invitation/device authentication, detectors, SQLite storage, live SSE feed and Web Push.
 - `pwa-invite-console`: the existing external private console; Threadmark implements its standard admin API contract.
 - `pwa-kit`: vendored service-worker update mechanism in `app/web/`.
@@ -42,7 +42,8 @@ The two connectors and app run as separate rootless Podman containers on a priva
 - WhatsApp QR or phone-number pairing.
 - Live receipt of new group and individual-chat messages.
 - Separate group and contact allowlists; every source is off by default.
-- Read-only personal Gmail OAuth with independent label and discovered-sender allowlists.
+- Personal and Dev profiles with separate feeds, counters, sources, rules, Done/Snoozed/Promotional views and labeled notifications.
+- Two isolated read-only Gmail OAuth connections with independent label and discovered-sender allowlists.
 - Gmail incremental synchronization every 60 seconds, starting at connection time without importing old mail.
 - Metadata-first routing: complete email bodies are fetched only for enabled labels or senders; attachments are not downloaded.
 - Contact discovery from WhatsApp metadata and new incoming chats, without retaining unselected message content.
@@ -111,13 +112,19 @@ set +a
 DATA_DIR="$PWD/data/bridge" HOST=127.0.0.1 node bridge/index.mjs
 ```
 
-Start the optional Gmail connector in a third terminal after configuring Google OAuth:
+Start the optional Personal Gmail connector in a third terminal after configuring Google OAuth:
 
 ```bash
 set -a
 . deploy/threadmark.env
 set +a
 DATA_DIR="$PWD/data/gmail" HOST=127.0.0.1 node gmail/index.mjs
+```
+
+For Dev Gmail, start another process with its own data directory and profile identity:
+
+```bash
+GMAIL_PROFILE_ID=dev DATA_DIR="$PWD/data/gmail-dev" HOST=127.0.0.1 PORT=4394 node gmail/index.mjs
 ```
 
 Create the first device invitation through the private admin endpoint or after registering the app in `pwa-invite-console`:
@@ -131,19 +138,22 @@ curl -sS http://127.0.0.1:4391/api/admin/invites \
 
 Open the returned URL, activate the device, connect the desired services and select the sources to monitor.
 
-## Connect personal Gmail
+## Connect Gmail profiles
 
 1. In [Google Cloud Console](https://console.cloud.google.com/), create or select a project and enable **Gmail API**.
 2. Configure the OAuth consent screen as **External**. While it is in Testing, add your Gmail address as a test user.
-3. Create an OAuth client of type **Web application**. Add exactly `https://your-threadmark-origin/api/gmail/oauth/callback` as an authorized redirect URI.
-4. Store the client ID and secret without printing them:
+3. Set the application home page to `https://your-threadmark-origin/about`, the privacy policy to `https://your-threadmark-origin/privacy`, and upload `app/web/icons/oauth-logo-120.png` as the app logo.
+4. Create an OAuth client of type **Web application**. Add exactly `https://your-threadmark-origin/api/gmail/oauth/callback` as an authorized redirect URI.
+5. Store the client ID and secret without printing them:
 
    ```bash
    node scripts/configure-gmail.mjs
    ./deploy.sh
    ```
 
-5. Open **Connect → Connect personal Gmail**, approve read-only access, then enable Gmail labels or senders under **Monitored sources**.
+6. Select **Personal** or **Dev**, open **Connect**, authorize the matching Gmail account, then enable labels or senders under **Monitored sources**.
+
+Both connections use the same OAuth client and callback URI but store separate encrypted refresh tokens and Gmail history checkpoints. The Dev profile begins with five editable Jev monitors for security/access changes, build or deployment failures, store/policy actions, direct review requests and actionable user issues.
 
 Google OAuth apps left in External **Testing** mode issue refresh tokens that normally expire after seven days for Gmail scopes. For unattended personal monitoring, move the consent screen to **In production**. Google may show an unverified-app warning or require verification if the app is distributed to other users; Threadmark requests only `gmail.readonly` and does not publish your credentials.
 
@@ -177,8 +187,8 @@ The deployment script:
 1. installs pinned dependencies;
 2. runs the tests;
 3. builds both rootless Podman images;
-4. installs the network and three container Quadlets under `~/.config/containers/systemd/`;
-5. starts the app, verifies health, then starts the WhatsApp and Gmail connectors.
+4. installs the network and four container Quadlets under `~/.config/containers/systemd/`;
+5. starts the app, verifies health, then starts WhatsApp plus the isolated Personal and Dev Gmail connectors.
 
 Expose the app over a private HTTPS origin. A dedicated Tailscale Serve port avoids service-worker scope conflicts with other PWAs:
 
@@ -210,7 +220,7 @@ The public/tailnet PWA route must never inject the admin token. Only the private
 ## Privacy and retention
 
 - WhatsApp session credentials stay only in the bridge data volume.
-- The Gmail refresh token is encrypted with AES-256-GCM in the Gmail data volume. Its encryption key and Google OAuth client secret stay in the mode-`0600` environment file.
+- Each Gmail refresh token is encrypted with AES-256-GCM in its profile-specific Gmail data volume. The encryption key and Google OAuth client secret stay in the mode-`0600` environment file.
 - Gmail access is read-only. Threadmark first retrieves headers and labels, then fetches the full body only when a source is enabled. Attachments are not fetched.
 - The app never receives raw encryption keys.
 - New group and individual-chat events are routed only between the local bridge and app containers.
@@ -228,7 +238,7 @@ The public/tailnet PWA route must never inject the admin token. Only the private
 - Message content is never intentionally written to logs.
 - The default retention setting is 30 days; open attention items are preserved.
 
-Back up all three data directories together with the environment file, using encryption. Treat both connector directories, the environment file and `BRIDGE_TOKEN` as account credentials.
+Back up the app, bridge and both Gmail data directories together with the environment file, using encryption. Treat every connector directory, the environment file and `BRIDGE_TOKEN` as account credentials.
 
 ## Jev semantic detection
 

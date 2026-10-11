@@ -151,6 +151,53 @@ test('sender metadata uses stable opaque source identifiers', () => {
   assert.equal(metadata.senderSourceId.includes('name@example.test'), false);
 });
 
+test('Personal and Dev Gmail profiles keep sources, rules, messages, and counters isolated', () => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'threadmark-gmail-profiles-'));
+  const db = openDatabase(dataDir);
+  try {
+    const store = new ThreadmarkStore(db);
+    const personal = { id: 'gmail:label:INBOX', name: 'Inbox', kind: 'gmail_label' };
+    const dev = { id: 'gmail:dev:label:INBOX', name: 'Inbox', kind: 'gmail_label' };
+    store.upsertGmailSources([personal], 'personal');
+    store.upsertGmailSources([dev], 'dev');
+    store.selectGmailSource(personal.id, true, 'personal');
+    store.selectGmailSource(dev.id, true, 'dev');
+
+    const personalResult = store.ingestMessage({
+      id: 'gmail:personal-event', profileId: 'personal', sourceId: personal.id, sourceName: personal.name, sourceKind: personal.kind,
+      senderId: senderSourceId('billing@example.test'), senderName: 'Example billing', sentAt: '2026-10-11T08:00:00Z', text: 'Please pay 20 lei today.',
+    });
+    const devResult = store.ingestMessage({
+      id: 'gmail:dev:dev-event', profileId: 'dev', sourceId: dev.id, sourceName: dev.name, sourceKind: dev.kind,
+      senderId: senderSourceId('ci@example.test', 'dev'), senderName: 'Example CI', sentAt: '2026-10-11T08:01:00Z', text: 'Please pay 30 lei today.',
+    });
+
+    assert.equal(personalResult.items[0].profile.id, 'personal');
+    assert.equal(devResult.items[0].profile.id, 'dev');
+    assert.equal(store.listItems({ profileId: 'personal' }).length, 1);
+    assert.equal(store.listItems({ profileId: 'dev' }).length, 1);
+    assert.equal(store.summary('personal').payments, 1);
+    assert.equal(store.summary('dev').payments, 1);
+    assert.deepEqual(store.routingConfig('personal').gmailSources.map((item) => ({ ...item })), [personal]);
+    assert.deepEqual(store.routingConfig('dev').gmailSources.map((item) => ({ ...item })), [dev]);
+    assert.equal(store.listRules({ profileId: 'personal' }).length, 0);
+    assert.equal(store.listRules({ profileId: 'dev' }).length, 5);
+  } finally { db.close(); fs.rmSync(dataDir, { recursive: true, force: true }); }
+});
+
+test('Dev Gmail normalization namespaces identifiers and OAuth state', () => {
+  const source = { id: 'gmail:dev:label:INBOX', name: 'Inbox', kind: 'gmail_label' };
+  const message = {
+    id: 'dev-mail', threadId: 'dev-thread', internalDate: '1790856000000', labelIds: ['INBOX'],
+    payload: { headers: [{ name: 'From', value: 'CI <ci@example.test>' }, { name: 'Subject', value: 'Build failed' }], mimeType: 'text/plain', body: { data: Buffer.from('The production build failed.').toString('base64url') } },
+  };
+  const normalized = normalizeGmailMessage(message, source, { profileId: 'dev', account: 'developer@example.test' });
+  assert.equal(normalized.id, 'gmail:dev:dev-mail');
+  assert.equal(normalized.profileId, 'dev');
+  assert.match(normalized.senderId, /^gmail:dev:sender:/u);
+  assert.match(normalized.externalUrl, /developer%40example\.test/u);
+});
+
 function response(payload, status = 200) {
   return { ok: status >= 200 && status < 300, status, json: async () => payload };
 }

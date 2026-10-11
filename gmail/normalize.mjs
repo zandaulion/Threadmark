@@ -1,9 +1,9 @@
 import crypto from 'node:crypto';
 
-export function senderSourceId(address) {
+export function senderSourceId(address, profileId = 'personal') {
   const normalized = String(address || '').trim().toLocaleLowerCase();
   if (!normalized) return null;
-  return `gmail:sender:${crypto.createHash('sha256').update(normalized).digest('hex').slice(0, 32)}`;
+  return `${gmailPrefix(profileId)}sender:${crypto.createHash('sha256').update(normalized).digest('hex').slice(0, 32)}`;
 }
 
 export function parseMailbox(value) {
@@ -14,7 +14,7 @@ export function parseMailbox(value) {
   return { address, name: name || address || 'Email sender' };
 }
 
-export function normalizeGmailMessage(message, source) {
+export function normalizeGmailMessage(message, source, options = {}) {
   if (!message?.id || !message?.payload || !source?.id || !source?.kind) return null;
   const headers = headerMap(message.payload.headers);
   const sender = parseMailbox(headers.from);
@@ -25,11 +25,12 @@ export function normalizeGmailMessage(message, source) {
   const precedence = String(headers.precedence || '').trim().toLocaleLowerCase();
   const autoSubmitted = String(headers['auto-submitted'] || '').trim().toLocaleLowerCase();
   return {
-    id: `gmail:${message.id}`,
+    id: gmailMessageId(options.profileId, message.id),
+    profileId: validProfileId(options.profileId),
     sourceId: source.id,
     sourceName: source.name,
     sourceKind: source.kind,
-    senderId: senderSourceId(sender.address) || 'gmail:sender:unknown',
+    senderId: senderSourceId(sender.address, options.profileId) || `${gmailPrefix(options.profileId)}sender:unknown`,
     senderName: sender.name,
     sentAt: Number.isFinite(internalDate) ? new Date(internalDate).toISOString() : new Date().toISOString(),
     text,
@@ -40,11 +41,11 @@ export function normalizeGmailMessage(message, source) {
       precedenceBulk: ['bulk', 'list', 'junk'].includes(precedence),
       autoSubmitted: Boolean(autoSubmitted && autoSubmitted !== 'no'),
     },
-    externalUrl: `https://mail.google.com/mail/u/0/#all/${encodeURIComponent(message.threadId || message.id)}`,
+    externalUrl: `https://mail.google.com/mail/u/${encodeURIComponent(String(options.account || '0'))}/#all/${encodeURIComponent(message.threadId || message.id)}`,
   };
 }
 
-export function messageMetadata(message) {
+export function messageMetadata(message, profileId = 'personal') {
   const headers = headerMap(message?.payload?.headers);
   const sender = parseMailbox(headers.from);
   return {
@@ -54,8 +55,26 @@ export function messageMetadata(message) {
     labelIds: Array.isArray(message?.labelIds) ? message.labelIds : [],
     subject: decodeHeader(headers.subject || '(No subject)'),
     sender,
-    senderSourceId: senderSourceId(sender.address),
+    senderSourceId: senderSourceId(sender.address, profileId),
   };
+}
+
+export function gmailSourceId(profileId, kind, id) {
+  return `${gmailPrefix(profileId)}${kind}:${id}`;
+}
+
+function gmailPrefix(profileId = 'personal') {
+  const profile = validProfileId(profileId);
+  return profile === 'personal' ? 'gmail:' : `gmail:${profile}:`;
+}
+
+function gmailMessageId(profileId, id) {
+  const profile = validProfileId(profileId);
+  return profile === 'personal' ? `gmail:${id}` : `gmail:${profile}:${id}`;
+}
+
+function validProfileId(value) {
+  return value === 'dev' ? 'dev' : 'personal';
 }
 
 export function cleanEmailText(value) {

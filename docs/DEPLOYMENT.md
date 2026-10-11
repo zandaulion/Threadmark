@@ -45,7 +45,7 @@ By default this writes `~/.config/threadmark/server.env` and refuses to overwrit
 
 Runtime-only variables include `HOST`, `PORT`, `DATA_DIR`, connector control URLs for the app and `APP_INTERNAL_URL` for connectors. Container definitions set these correctly.
 
-### Personal Gmail OAuth
+### Gmail OAuth for Personal and Dev
 
 In Google Cloud Console, enable Gmail API, configure an External OAuth consent screen, and create a **Web application** OAuth client. Its authorized redirect URI must exactly equal `GMAIL_OAUTH_REDIRECT_URI`. Add your Gmail address as a test user while the consent screen is in Testing, then store the credentials with:
 
@@ -53,7 +53,17 @@ In Google Cloud Console, enable Gmail API, configure an External OAuth consent s
 node scripts/configure-gmail.mjs
 ```
 
-Testing-mode refresh tokens for personal Gmail normally expire after seven days. Move the consent screen to **In production** for unattended use. Apps distributed to other users may require Google verification because `gmail.readonly` is a restricted scope.
+The same OAuth client and callback URI serve both profile connections. Add both Google accounts as test users while the consent screen is in Testing. Testing-mode refresh tokens normally expire after seven days; move the consent screen to **In production** for unattended use. Apps distributed to other users may require Google verification because `gmail.readonly` is a restricted scope.
+
+For a deployment at `https://threadmark.example.com`, use these public OAuth branding values:
+
+- application home page: `https://threadmark.example.com/about`;
+- privacy policy: `https://threadmark.example.com/privacy`;
+- authorized domain: `example.com`;
+- logo upload: `app/web/icons/oauth-logo-120.png` (120×120 PNG, below Google's 1 MiB limit);
+- terms of service: optional for a personal deployment.
+
+Replace the example origin and domain with the real deployment. The public pages deliberately do not expose private Threadmark data or require a device session.
 
 ## Direct development run
 
@@ -84,7 +94,7 @@ set +a
 DATA_DIR="$PWD/data/bridge" HOST=127.0.0.1 node bridge/index.mjs
 ```
 
-Start `gmail/index.mjs` in a third terminal with `DATA_DIR="$PWD/data/gmail" HOST=127.0.0.1`. The app listens on `4391`; WhatsApp and Gmail connector control endpoints use `4392` and `4393`.
+Start Personal with `GMAIL_PROFILE_ID=personal DATA_DIR="$PWD/data/gmail" HOST=127.0.0.1 PORT=4393`, and Dev with `GMAIL_PROFILE_ID=dev DATA_DIR="$PWD/data/gmail-dev" HOST=127.0.0.1 PORT=4394`. Configure the app's `GMAIL_CONTROL_URL` and `GMAIL_DEV_CONTROL_URL` accordingly. The app listens on `4391`; WhatsApp uses `4392`.
 
 ## Podman Compose
 
@@ -103,7 +113,7 @@ THREADMARK_DATA_DIR=/srv/threadmark \
 podman compose up --build -d
 ```
 
-The app port is published on loopback. Both connectors are reachable only over the `threadmark` container network.
+The app port is published on loopback. All three connector services are reachable only over the `threadmark` container network.
 
 ## Rootless Quadlet production deployment
 
@@ -113,12 +123,13 @@ After generating `~/.config/threadmark/server.env`, run:
 ./deploy.sh
 ```
 
-The script installs pinned dependencies, runs tests, builds all three images, installs the Quadlet files, starts the app, checks health and then starts both connectors. Persistent data is placed under:
+The script installs pinned dependencies, runs tests, builds all three images, installs four container Quadlets, starts the app, checks health and then starts the connector services. Persistent data is placed under:
 
 ```text
 ~/.local/share/threadmark/app
 ~/.local/share/threadmark/bridge
 ~/.local/share/threadmark/gmail
+~/.local/share/threadmark/gmail-dev
 ```
 
 Enable lingering if the user services must run before login:
@@ -130,8 +141,8 @@ loginctl enable-linger "$USER"
 Inspect services:
 
 ```bash
-systemctl --user status threadmark-app.service threadmark-bridge.service threadmark-gmail.service
-journalctl --user -u threadmark-app.service -u threadmark-bridge.service -u threadmark-gmail.service -f
+systemctl --user status threadmark-app.service threadmark-bridge.service threadmark-gmail.service threadmark-gmail-dev.service
+journalctl --user -u threadmark-app.service -u threadmark-bridge.service -u threadmark-gmail.service -u threadmark-gmail-dev.service -f
 ```
 
 ## Private HTTPS exposure
@@ -149,7 +160,7 @@ If using Caddy, nginx or another proxy:
 - forward the full app origin to `127.0.0.1:4391`;
 - preserve streaming for `/api/stream` and avoid response buffering;
 - never inject `ADMIN_TOKEN` into the public route;
-- do not expose connector ports `4392` or `4393`;
+- do not expose connector control ports;
 - keep HTTPS and `COOKIE_SECURE=1` in production.
 
 ## Invitation console integration
@@ -205,7 +216,7 @@ The app performs due-notification checks, digest checks and retention pruning ev
 2. Review application and dependency changes.
 3. Run `npm test`.
 4. Run `./deploy.sh` to rebuild and restart.
-5. Verify `/api/health`, both services and the PWA version.
+5. Verify `/api/health`, all four services and the PWA version.
 6. If a browser remains stale, open `/bust` on that Threadmark origin.
 
 SQLite schema migrations are applied on application startup. Keep the pre-upgrade backup until the new version is verified.
@@ -216,22 +227,23 @@ Back up these as one encrypted set:
 
 - app data directory, including `threadmark.sqlite` and its WAL files;
 - bridge data directory, including `auth/` and `outbox.sqlite`;
-- Gmail data directory, including encrypted OAuth state and `outbox.sqlite`;
+- Personal Gmail data directory, including encrypted OAuth state and `outbox.sqlite`;
+- Dev Gmail data directory, including its independent encrypted OAuth state and `outbox.sqlite`;
 - `server.env`.
 
 For a consistent simple backup, stop all services first:
 
 ```bash
-systemctl --user stop threadmark-bridge.service threadmark-gmail.service threadmark-app.service
+systemctl --user stop threadmark-bridge.service threadmark-gmail.service threadmark-gmail-dev.service threadmark-app.service
 ```
 
 Copy all locations to encrypted storage, then restart app before connectors:
 
 ```bash
-systemctl --user start threadmark-app.service threadmark-bridge.service threadmark-gmail.service
+systemctl --user start threadmark-app.service threadmark-bridge.service threadmark-gmail.service threadmark-gmail-dev.service
 ```
 
-To restore, stop all services, replace every location with the matching backup, confirm ownership and mode `0600` for the environment file, then start the app followed by connectors. Treat every backup as both a WhatsApp and read-only Gmail account credential.
+To restore, stop all services, replace every location with the matching backup, confirm ownership and mode `0600` for the environment file, then start the app followed by connectors. Treat every backup as WhatsApp plus read-only Personal and Dev Gmail credentials.
 
 ## Troubleshooting
 

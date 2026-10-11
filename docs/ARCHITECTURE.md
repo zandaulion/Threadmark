@@ -7,13 +7,13 @@ Threadmark separates WhatsApp/Gmail access, attention detection and the browser 
 | Component | Responsibility | Persistent data |
 | --- | --- | --- |
 | `threadmark-bridge` | WhatsApp linked-device connection, source discovery, local media extraction and durable event delivery | Baileys session credentials and the SQLite outbox |
-| `threadmark-gmail` | Read-only Gmail OAuth, incremental history polling, source discovery and durable event delivery | Encrypted OAuth state and the SQLite outbox |
+| `threadmark-gmail` and `threadmark-gmail-dev` | Isolated read-only Gmail OAuth, incremental history polling, source discovery and durable event delivery | Separate encrypted OAuth state, history checkpoint and SQLite outbox per profile |
 | `threadmark-app` | Invitation auth, source selection, detection, rules, item workflow, API, SSE, push and PWA assets | SQLite application database |
 | Browser PWA | Inbox, configuration, installable shell, service worker and push subscription | Revocable session cookie, PWA cache and browser push subscription |
 | `pwa-invite-console` | Private creation of invitations and device revocation through Threadmark's admin API | Managed by the external console |
 | TypeSafe AI / Jev | Optional typed semantic judgments and probabilities | External service; only invoked within the documented boundary |
 
-The default Podman deployment puts the app and both connectors on one network. Connectors have no host ports. The app binds only to `127.0.0.1:4391`; a private HTTPS reverse proxy or Tailscale Serve provides browser access.
+The default Podman deployment puts the app, WhatsApp bridge and two Gmail connector instances on one network. Connectors have no host ports. The app binds only to `127.0.0.1:4391`; a private HTTPS reverse proxy or tunnel provides browser access.
 
 ## Message flow
 
@@ -30,6 +30,8 @@ The default Podman deployment puts the app and both connectors on one network. C
 
 Gmail follows the same flow with a privacy-preserving routing stage. Connection stores the current `historyId` and deliberately performs no historical import. Each poll calls `history.list`; if Google reports an expired checkpoint, Threadmark resets to the current profile history without backfilling. New mail is first retrieved as metadata. A complete body is fetched only after a label or sender matches the allowlist. Plain text is preferred, HTML is reduced to text, quoted replies and signatures are removed, and attachments are ignored.
 
+Personal and Dev are first-class profiles. Gmail source, sender, event and outbox identifiers are namespaced by connector profile, and every stored source and rule carries `profile_id`. Existing installations migrate all current data to Personal. The Dev connector uses a separate volume, OAuth token and `historyId`; its authorization state is prefixed so the shared public callback can route the response to the correct connector without exposing account details.
+
 ## Normalized connector event
 
 Connectors emit this logical shape:
@@ -37,6 +39,7 @@ Connectors emit this logical shape:
 ```js
 {
   id,
+  profileId,     // personal | dev; omitted by WhatsApp and defaults to personal
   sourceId,
   sourceName,
   sourceKind,     // group | contact | gmail_label | gmail_sender
@@ -96,16 +99,17 @@ All detectors return a stable shape:
 The application uses Node's built-in SQLite driver. The main entities are:
 
 - `devices` and `invites` for browser authorization;
-- `groups` for all WhatsApp and Gmail sources, distinguished by `kind`, plus their selection state;
+- `profiles` for the Personal and Dev attention boundaries;
+- `groups` for all WhatsApp and Gmail sources, distinguished by `kind` and `profile_id`, plus their selection state;
 - `messages` for matched message excerpts only;
 - `attention_items` for category, confidence, priority, status, snooze, feedback and detector details;
-- `rules` for local phrases and semantic conditions;
+- `rules` for profile-scoped local phrases and semantic conditions;
 - `context_messages` for the optional 48-hour rolling buffer;
 - `push_subscriptions`, `system_state` and `audit_events`.
 
 Open attention items are preserved by retention pruning. Older messages whose items are no longer open are deleted after `RETENTION_DAYS`. Expired context is pruned by the same minute scheduler.
 
-Each connector keeps its own `outbox.sqlite`. WhatsApp multi-file auth state lives in the bridge volume. Gmail OAuth credentials are AES-256-GCM encrypted in the Gmail volume with a key held in the protected environment file. These stores serve different recovery purposes and should be backed up together.
+Each connector keeps its own `outbox.sqlite`. WhatsApp multi-file auth state lives in the bridge volume. Each Gmail account has its own volume; OAuth credentials are AES-256-GCM encrypted with a key held in the protected environment file. These stores serve different recovery purposes and should be backed up together.
 
 ## Authentication and trust boundaries
 

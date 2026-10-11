@@ -8,6 +8,8 @@ const state = {
   groups: [],
   contacts: [],
   gmailSources: [],
+  profiles: [{ id: 'personal', name: 'Personal' }, { id: 'dev', name: 'Dev' }],
+  profileId: 'personal',
   rules: [],
   summary: { open: 0, payments: 0, meetings: 0, reminders: 0, promotional: 0, groups: 0, contacts: 0, gmail: 0 },
   filter: 'all',
@@ -55,6 +57,8 @@ async function api(url, options = {}) {
 }
 
 async function boot() {
+  const requestedProfile = new URL(location.href).searchParams.get('profile') || localStorage.getItem('threadmark-profile');
+  state.profileId = requestedProfile === 'dev' ? 'dev' : 'personal';
   $('#today-label').textContent = new Intl.DateTimeFormat(undefined, { weekday: 'long', month: 'long', day: 'numeric' }).format(new Date());
   const invite = new URL(location.href).searchParams.get('invite');
   if (invite) $('#invite-code').value = invite;
@@ -102,18 +106,20 @@ function finishGmailRedirect() {
 }
 
 async function refreshAll() {
-  const [summary, feedResult, groups, contacts, gmailSources, rules, bridge, gmail, detection, settings] = await Promise.all([
-    api('/api/summary'),
-    api(`/api/feed?type=${encodeURIComponent(state.filter)}&status=${encodeURIComponent(state.status)}`),
-    api('/api/groups'),
-    api('/api/contacts'),
-    api('/api/gmail/sources'),
-    api('/api/rules'),
+  const [profiles, summary, feedResult, groups, contacts, gmailSources, rules, bridge, gmail, detection, settings] = await Promise.all([
+    api('/api/profiles'),
+    api(profileApi('/api/summary')),
+    api(profileApi(`/api/feed?type=${encodeURIComponent(state.filter)}&status=${encodeURIComponent(state.status)}`)),
+    api(profileApi('/api/groups')),
+    api(profileApi('/api/contacts')),
+    api(profileApi('/api/gmail/sources')),
+    api(profileApi('/api/rules')),
     api('/api/whatsapp/status'),
-    api('/api/gmail/status'),
+    api(profileApi('/api/gmail/status')),
     api('/api/detection/status'),
     api('/api/settings'),
   ]);
+  state.profiles = profiles.profiles;
   state.summary = summary;
   state.items = feedResult.items;
   state.groups = groups.groups;
@@ -128,6 +134,7 @@ async function refreshAll() {
 }
 
 function render() {
+  renderProfiles();
   renderSummary();
   renderFeed();
   renderSources();
@@ -135,6 +142,25 @@ function render() {
   renderBridge();
   renderDetection();
   renderSettings();
+}
+
+function renderProfiles() {
+  $$('[data-profile]').forEach((tab) => {
+    const active = tab.dataset.profile === state.profileId;
+    tab.classList.toggle('active', active);
+    tab.setAttribute('aria-selected', String(active));
+  });
+  const dev = state.profileId === 'dev';
+  $('#profile-heading').textContent = dev ? 'Your projects, under control.' : 'Your attention, distilled.';
+  $('#profile-lede').textContent = dev
+    ? 'Security, deployments, store actions, reviews, and user issues from your development mailbox.'
+    : 'Invoices, payments, meetings, and reminders from the conversations you chose—nothing else.';
+}
+
+function profileApi(pathname) {
+  const url = new URL(pathname, location.origin);
+  url.searchParams.set('profile', state.profileId);
+  return `${url.pathname}${url.search}`;
 }
 
 function renderSummary() {
@@ -255,19 +281,28 @@ function renderBridge() {
   const connected = state.bridge.connection === 'connected';
   const gmailConnected = state.gmail.connection === 'connected';
   const pairing = state.bridge.connection === 'pairing';
-  const connectedCount = Number(connected) + Number(gmailConnected);
-  const label = connectedCount === 2 ? 'WhatsApp + Gmail' : connected ? 'WhatsApp connected' : gmailConnected ? 'Gmail connected' : pairing ? 'Ready to pair' : state.bridge.connection === 'connecting' ? 'Connecting' : 'Sources offline';
+  const dev = state.profileId === 'dev';
+  const connectedCount = dev ? Number(gmailConnected) : Number(connected) + Number(gmailConnected);
+  const label = dev
+    ? gmailConnected ? 'Dev Gmail connected' : 'Dev Gmail offline'
+    : connectedCount === 2 ? 'WhatsApp + Gmail' : connected ? 'WhatsApp connected' : gmailConnected ? 'Gmail connected' : pairing ? 'Ready to pair' : state.bridge.connection === 'connecting' ? 'Connecting' : 'Sources offline';
   $('#connection-label').textContent = label;
   $('#status-dot').className = `status-dot ${connectedCount ? 'connected' : pairing ? 'pairing' : ''}`;
-  $('#mini-state').textContent = connectedCount ? `${connectedCount} live` : pairing ? 'Pairing' : 'Offline';
+  $('#mini-state').textContent = connectedCount ? `${connectedCount} live` : !dev && pairing ? 'Pairing' : 'Offline';
+  $('#whatsapp-connection-section').hidden = dev;
+  $('#live-sources-title').textContent = dev ? 'Dev Gmail' : 'WhatsApp + Gmail';
+  $('#gmail-connection-title').textContent = dev ? 'Dev mailbox' : 'Personal mailbox';
+  $('#gmail-connect-button').textContent = `Connect ${dev ? 'Dev' : 'Personal'} Gmail`;
   $('#whatsapp-dialog-state').textContent = connected ? 'Connected' : pairing ? 'Pairing' : 'Offline';
-  $('#bridge-copy').textContent = connected
+  $('#bridge-copy').textContent = dev
+    ? 'New email from selected Dev labels and senders is checked separately from Personal.'
+    : connected
     ? 'New messages from selected groups and people are being checked in real time.'
     : pairing ? 'Scan the linked-device code to begin monitoring.'
       : 'The bridge is reconnecting or waiting for its first link.';
   $('#gmail-bridge-copy').textContent = gmailConnected
-    ? `Gmail connected${state.gmail.account ? ` as ${state.gmail.account}` : ''}; checked every ${state.gmail.pollSeconds || 60} seconds.`
-    : state.gmail.configured ? 'Gmail is ready to connect.' : 'Add Google OAuth credentials on the server to enable Gmail.';
+    ? `${dev ? 'Dev Gmail' : 'Gmail'} connected${state.gmail.account ? ` as ${state.gmail.account}` : ''}; checked every ${state.gmail.pollSeconds || 60} seconds.`
+    : state.gmail.configured ? `${dev ? 'Dev Gmail' : 'Gmail'} is ready to connect.` : 'Add Google OAuth credentials on the server to enable Gmail.';
   $('#gmail-dialog-state').textContent = gmailConnected ? 'Connected' : state.gmail.connection === 'error' ? 'Needs attention' : state.gmail.configured ? 'Not connected' : 'Not configured';
   $('#gmail-dialog-copy').textContent = gmailConnected
     ? `Connected as ${state.gmail.account}. Only new email from enabled labels or senders is inspected.`
@@ -302,11 +337,24 @@ function connectStream() {
   state.stream?.close();
   const stream = new EventSource('/api/stream');
   state.stream = stream;
-  stream.addEventListener('item', async () => { await refreshFeedAndSummary(); });
+  stream.addEventListener('item', async (event) => {
+    const item = JSON.parse(event.data);
+    if (!item.profile || item.profile.id === state.profileId) await refreshFeedAndSummary();
+  });
   stream.addEventListener('groups', (event) => { state.groups = JSON.parse(event.data); renderSources(); });
   stream.addEventListener('contacts', (event) => { state.contacts = JSON.parse(event.data); renderSources(); });
-  stream.addEventListener('gmail-sources', (event) => { state.gmailSources = JSON.parse(event.data); renderSources(); });
-  stream.addEventListener('rules', (event) => { state.rules = JSON.parse(event.data); renderRules(); });
+  stream.addEventListener('gmail-sources', (event) => {
+    const payload = JSON.parse(event.data);
+    if (Array.isArray(payload)) state.gmailSources = payload;
+    else if (payload.profileId === state.profileId) state.gmailSources = payload.sources;
+    renderSources();
+  });
+  stream.addEventListener('rules', (event) => {
+    const payload = JSON.parse(event.data);
+    if (Array.isArray(payload)) state.rules = payload;
+    else if (payload.profileId === state.profileId) state.rules = payload.rules;
+    renderRules();
+  });
   stream.addEventListener('bridge', (event) => { state.bridge = JSON.parse(event.data); renderBridge(); });
   stream.addEventListener('settings', (event) => { state.settings = JSON.parse(event.data); renderSettings(); renderDetection(); });
   stream.onerror = () => {
@@ -319,7 +367,10 @@ function connectStream() {
 }
 
 async function refreshFeedAndSummary() {
-  const [summary, result] = await Promise.all([api('/api/summary'), api(`/api/feed?type=${encodeURIComponent(state.filter)}&status=${encodeURIComponent(state.status)}`)]);
+  const [summary, result] = await Promise.all([
+    api(profileApi('/api/summary')),
+    api(profileApi(`/api/feed?type=${encodeURIComponent(state.filter)}&status=${encodeURIComponent(state.status)}`)),
+  ]);
   state.summary = summary;
   state.items = result.items;
   renderSummary();
@@ -435,6 +486,18 @@ $$('.tab').forEach((tab) => tab.addEventListener('click', async () => {
   await refreshFeedAndSummary();
 }));
 
+$$('[data-profile]').forEach((tab) => tab.addEventListener('click', async () => {
+  if (tab.dataset.profile === state.profileId) return;
+  state.profileId = tab.dataset.profile === 'dev' ? 'dev' : 'personal';
+  localStorage.setItem('threadmark-profile', state.profileId);
+  const current = new URL(location.href);
+  current.searchParams.set('profile', state.profileId);
+  history.replaceState(null, '', current.pathname + current.search + current.hash);
+  state.scopeMode = state.profileId === 'dev' ? 'gmail_labels' : 'groups';
+  state.scopeQuery = '';
+  await refreshAll();
+}));
+
 $$('[data-status]').forEach((tab) => tab.addEventListener('click', async () => {
   state.status = tab.dataset.status;
   $$('[data-status]').forEach((item) => {
@@ -448,7 +511,22 @@ $('#refresh-button').addEventListener('click', refreshAll);
 $('#groups-button').addEventListener('click', openSources);
 $('#edit-groups-button').addEventListener('click', openSources);
 $('#mobile-groups-button').addEventListener('click', openSources);
-function openSources() { renderSources(); $('#groups-dialog').showModal(); }
+function openSources() {
+  if (state.profileId === 'dev' && ['groups', 'contacts'].includes(state.scopeMode)) state.scopeMode = 'gmail_labels';
+  $$('[data-scope-tab]').forEach((tab) => {
+    const personalOnly = ['groups', 'contacts'].includes(tab.dataset.scopeTab);
+    tab.hidden = state.profileId === 'dev' && personalOnly;
+    const active = tab.dataset.scopeTab === state.scopeMode;
+    tab.classList.toggle('active', active);
+    tab.setAttribute('aria-selected', String(active));
+  });
+  $('#groups-list').hidden = state.scopeMode !== 'groups';
+  $('#contacts-list').hidden = state.scopeMode !== 'contacts';
+  $('#gmail-labels-list').hidden = state.scopeMode !== 'gmail_labels';
+  $('#gmail-senders-list').hidden = state.scopeMode !== 'gmail_senders';
+  renderSources();
+  $('#groups-dialog').showModal();
+}
 
 $$('[data-scope-tab]').forEach((tab) => tab.addEventListener('click', () => {
   $$('[data-scope-tab]').forEach((item) => {
@@ -477,7 +555,7 @@ async function lookupContact() {
   button.disabled = true;
   try {
     const result = await api('/api/contacts/lookup', { method: 'POST', body: JSON.stringify({ phoneNumber: digits }) });
-    state.contacts = (await api('/api/contacts')).contacts;
+    state.contacts = (await api(profileApi('/api/contacts'))).contacts;
     renderSources();
     showToast(`${result.contact?.name || `+${digits}`} added. Enable monitoring when ready.`);
   } catch (error) { showToast(error.message); }
@@ -533,7 +611,7 @@ async function importContacts(records) {
   const contacts = [...byPhone].slice(0, 100).map(([phoneNumber, name]) => ({ phoneNumber, name }));
   if (!contacts.length) throw new Error('No usable phone numbers were found.');
   const result = await api('/api/contacts/import', { method: 'POST', body: JSON.stringify({ contacts }) });
-  state.contacts = (await api('/api/contacts')).contacts;
+  state.contacts = (await api(profileApi('/api/contacts'))).contacts;
   state.scopeQuery = '';
   $('#scope-search').value = '';
   renderSources();
@@ -545,9 +623,9 @@ $('#groups-list').addEventListener('change', async (event) => {
   if (!input) return;
   input.disabled = true;
   try {
-    await api(`/api/groups/${encodeURIComponent(input.dataset.groupId)}/selection`, { method: 'POST', body: JSON.stringify({ selected: input.checked }) });
-    state.groups = (await api('/api/groups')).groups;
-    state.summary = await api('/api/summary');
+    await api(profileApi(`/api/groups/${encodeURIComponent(input.dataset.groupId)}/selection`), { method: 'POST', body: JSON.stringify({ selected: input.checked }) });
+    state.groups = (await api(profileApi('/api/groups'))).groups;
+    state.summary = await api(profileApi('/api/summary'));
     renderSources();
     renderSummary();
   } catch (error) { input.checked = !input.checked; showToast(error.message); }
@@ -559,9 +637,9 @@ $('#contacts-list').addEventListener('change', async (event) => {
   if (!input) return;
   input.disabled = true;
   try {
-    await api(`/api/contacts/${encodeURIComponent(input.dataset.contactId)}/selection`, { method: 'POST', body: JSON.stringify({ selected: input.checked }) });
-    state.contacts = (await api('/api/contacts')).contacts;
-    state.summary = await api('/api/summary');
+    await api(profileApi(`/api/contacts/${encodeURIComponent(input.dataset.contactId)}/selection`), { method: 'POST', body: JSON.stringify({ selected: input.checked }) });
+    state.contacts = (await api(profileApi('/api/contacts'))).contacts;
+    state.summary = await api(profileApi('/api/summary'));
     renderSources();
     renderSummary();
   } catch (error) { input.checked = !input.checked; showToast(error.message); }
@@ -573,9 +651,9 @@ for (const selector of ['#gmail-labels-list', '#gmail-senders-list']) $(selector
   if (!input) return;
   input.disabled = true;
   try {
-    await api(`/api/gmail/sources/${encodeURIComponent(input.dataset.gmailSourceId)}/selection`, { method: 'POST', body: JSON.stringify({ selected: input.checked }) });
-    state.gmailSources = (await api('/api/gmail/sources')).sources;
-    state.summary = await api('/api/summary');
+    await api(profileApi(`/api/gmail/sources/${encodeURIComponent(input.dataset.gmailSourceId)}/selection`), { method: 'POST', body: JSON.stringify({ selected: input.checked }) });
+    state.gmailSources = (await api(profileApi('/api/gmail/sources'))).sources;
+    state.summary = await api(profileApi('/api/summary'));
     renderSources();
   } catch (error) { input.checked = !input.checked; showToast(error.message); }
   finally { input.disabled = false; }
@@ -740,8 +818,8 @@ $('#rule-form').addEventListener('submit', async (event) => {
   $('#rule-error').textContent = '';
   try {
     const id = $('#rule-id').value;
-    const rule = await api(id ? `/api/rules/${encodeURIComponent(id)}` : '/api/rules', { method: id ? 'PUT' : 'POST', body: JSON.stringify(rulePayload()) });
-    state.rules = (await api('/api/rules')).rules;
+    const rule = await api(profileApi(id ? `/api/rules/${encodeURIComponent(id)}` : '/api/rules'), { method: id ? 'PUT' : 'POST', body: JSON.stringify(rulePayload()) });
+    state.rules = (await api(profileApi('/api/rules'))).rules;
     renderRules();
     closeRuleForm();
     showToast(`${rule.name} saved`);
@@ -754,8 +832,8 @@ $('#rules-list').addEventListener('change', async (event) => {
   if (!input) return;
   input.disabled = true;
   try {
-    await api(`/api/rules/${encodeURIComponent(input.dataset.ruleEnabled)}/enabled`, { method: 'POST', body: JSON.stringify({ enabled: input.checked }) });
-    state.rules = (await api('/api/rules')).rules;
+    await api(profileApi(`/api/rules/${encodeURIComponent(input.dataset.ruleEnabled)}/enabled`), { method: 'POST', body: JSON.stringify({ enabled: input.checked }) });
+    state.rules = (await api(profileApi('/api/rules'))).rules;
     renderRules();
   } catch (error) { input.checked = !input.checked; showToast(error.message); }
 });
@@ -772,8 +850,8 @@ $('#rules-list').addEventListener('click', async (event) => {
   const rule = state.rules.find((item) => item.id === remove.dataset.ruleDelete);
   if (!rule || !confirm(`Delete “${rule.name}”? Existing attention items will remain.`)) return;
   try {
-    await api(`/api/rules/${encodeURIComponent(rule.id)}`, { method: 'DELETE' });
-    state.rules = (await api('/api/rules')).rules;
+    await api(profileApi(`/api/rules/${encodeURIComponent(rule.id)}`), { method: 'DELETE' });
+    state.rules = (await api(profileApi('/api/rules'))).rules;
     renderRules();
     showToast('Rule deleted');
   } catch (error) { showToast(error.message); }
@@ -783,7 +861,7 @@ for (const selector of ['#connection-button', '#pair-button', '#mobile-connect-b
 async function openPairing() {
   $('#pair-dialog').showModal();
   try {
-    [state.bridge, state.gmail] = await Promise.all([api('/api/whatsapp/status'), api('/api/gmail/status')]);
+    [state.bridge, state.gmail] = await Promise.all([api('/api/whatsapp/status'), api(profileApi('/api/gmail/status'))]);
     renderBridge();
   }
   catch (error) { showToast(error.message); }
@@ -794,7 +872,7 @@ $('#gmail-connect-button').addEventListener('click', async () => {
   const button = $('#gmail-connect-button');
   button.disabled = true;
   try {
-    const result = await api('/api/gmail/connect', { method: 'POST', body: '{}' });
+    const result = await api(profileApi('/api/gmail/connect'), { method: 'POST', body: '{}' });
     if (!result.authorizationUrl?.startsWith('https://accounts.google.com/')) throw new Error('Google returned an invalid authorization URL.');
     location.assign(result.authorizationUrl);
   } catch (error) { showToast(error.message); button.disabled = false; }
@@ -803,7 +881,7 @@ $('#gmail-connect-button').addEventListener('click', async () => {
 $('#gmail-disconnect-button').addEventListener('click', async () => {
   if (!confirm('Disconnect Gmail and remove its OAuth tokens from this server? Existing attention items will remain.')) return;
   try {
-    state.gmail = await api('/api/gmail/disconnect', { method: 'POST', body: '{}' });
+    state.gmail = await api(profileApi('/api/gmail/disconnect'), { method: 'POST', body: '{}' });
     renderBridge();
     showToast('Gmail disconnected');
   } catch (error) { showToast(error.message); }
@@ -1038,7 +1116,7 @@ function base64Key(value) {
 
 setInterval(async () => {
   if (!state.authenticated) return;
-  try { [state.bridge, state.gmail] = await Promise.all([api('/api/whatsapp/status'), api('/api/gmail/status')]); renderBridge(); } catch {}
+  try { [state.bridge, state.gmail] = await Promise.all([api('/api/whatsapp/status'), api(profileApi('/api/gmail/status'))]); renderBridge(); } catch {}
 }, 10_000);
 
 boot();

@@ -25,6 +25,16 @@ test('urgent items are identified in the notification title', () => {
   assert.equal(payload.title, 'Urgent · Reminder matched');
 });
 
+test('Dev notifications are labeled and deep-link to the Dev profile', () => {
+  const payload = notificationPayload({
+    id: 'dev:item', type: 'reminder', title: 'Build failed',
+    source: { name: 'CI' }, profile: { id: 'dev', name: 'Dev' },
+  });
+  assert.equal(payload.title, 'Dev · Reminder matched');
+  assert.equal(payload.url, '/?profile=dev#item=dev%3Aitem');
+  assert.equal(payload.tag, 'dev:dev:item');
+});
+
 test('contact photos that need review have a specific notification title', () => {
   const payload = notificationPayload({
     id: 'photo:item', type: 'reminder', title: 'Photo needs review',

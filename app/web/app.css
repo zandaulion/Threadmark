@@ -79,6 +79,12 @@ h3 { margin: 0; font-size: 1.08rem; }
 .status-tab.active { background: var(--surface); color: var(--ink); box-shadow: 0 2px 7px #11182714; }
 .status-tab:focus-visible { outline: 3px solid #277c6f33; outline-offset: 1px; }
 .tabs { display: flex; gap: 22px; }
+.profile-tabs { display: inline-flex; gap: 4px; width: max-content; margin: 0 0 24px; padding: 4px; border: 1px solid var(--line); border-radius: 14px; background: #11182708; }
+.profile-tab { display: flex; align-items: center; gap: 8px; min-height: 40px; border: 0; border-radius: 10px; padding: 0 18px; background: transparent; color: var(--muted); font-weight: 800; }
+.profile-tab span { color: var(--coral); }
+.profile-tab[data-profile="dev"] span { color: var(--teal); }
+.profile-tab.active { background: var(--surface); color: var(--ink); box-shadow: 0 2px 8px #11182714; }
+.profile-tab:focus-visible { outline: 3px solid #277c6f33; outline-offset: 1px; }
 .tab { border: 0; border-bottom: 2px solid transparent; background: transparent; padding: 13px 1px 12px; color: var(--muted); font-weight: 750; }
 .tab.active { color: var(--ink); border-bottom-color: var(--coral); }
 .feed { min-height: 240px; }
@@ -277,6 +283,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--teal); box-shado
   .summary-card strong { font-size: 2.35rem; }
   .feed-heading { align-items: stretch; flex-direction: column; gap: 7px; padding-bottom: 9px; }
   .tabs { gap: 15px; overflow-x: auto; }
+  .profile-tabs { width: 100%; margin-bottom: 18px; }
+  .profile-tab { flex: 1; justify-content: center; }
   .tab { font-size: .84rem; }
   #refresh-button { display: none; }
   .feed-controls { align-self: stretch; overflow-x: auto; }

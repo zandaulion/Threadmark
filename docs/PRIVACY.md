@@ -2,6 +2,8 @@
 
 Threadmark is designed for a personal, private server, but it is not a zero-risk product. It uses an unofficial WhatsApp linked-device connector, read-only Gmail OAuth, and can optionally send selected message text to TypeSafe AI. This document makes those boundaries explicit.
 
+The deployment also serves a concise public policy for OAuth users at `/privacy` and an application overview at `/about`. Keep those public pages aligned with this technical document whenever data flows change.
+
 ## Default data boundary
 
 Groups and contacts are disabled until selected. For a new incoming message:
@@ -14,7 +16,7 @@ Groups and contacts are disabled until selected. For a new incoming message:
 
 Threadmark does not request full history, send messages, mark chats as read or publish online presence. Contact and group metadata may be retained so the selection screen can show available sources.
 
-Gmail begins at the current mailbox checkpoint and does not import old messages. Labels and headers of new messages are checked locally. Threadmark fetches a complete body only when an enabled label or sender matches, never fetches attachments, and cannot send, delete, modify or mark email as read.
+Each Gmail profile begins at its own current mailbox checkpoint and does not import old messages. Personal and Dev use separate encrypted tokens, checkpoints, outboxes, allowlists, rules and feeds. Labels and headers of new messages are checked locally. Threadmark fetches a complete body only when an enabled label or sender matches, never fetches attachments, and cannot send, delete, modify or mark email as read.
 
 ## What can leave the machine
 
@@ -37,7 +39,7 @@ Web Push necessarily passes an encrypted push payload through the browser vendor
 
 - WhatsApp linked-device credentials
 - bridge outbox
-- encrypted Gmail OAuth state and Gmail outbox
+- separate encrypted Personal and Dev Gmail OAuth state, checkpoints and outboxes
 - known WhatsApp/Gmail source metadata and selection state
 - matched message excerpts and attention items
 - local and semantic rule definitions
@@ -76,7 +78,7 @@ Connector credentials, source metadata, rules, settings, active browser devices 
 - `ADMIN_TOKEN` grants invitation and device administration. It belongs only in the private console route and protected environment file.
 - `BRIDGE_TOKEN` authenticates all internal source/event and bridge-control traffic.
 - `GOOGLE_CLIENT_SECRET` and `GMAIL_TOKEN_ENCRYPTION_KEY` remain in the protected server environment file.
-- Gmail refresh tokens are encrypted at rest. Possession of both the Gmail volume and encryption key grants read-only mailbox access until revoked.
+- Gmail refresh tokens are encrypted at rest in separate profile volumes. Possession of either Gmail volume plus the encryption key grants read-only access to that mailbox until revoked.
 - WhatsApp auth state in the bridge volume can act as the linked account and must be treated as a high-value credential.
 - TypeSafe and VAPID private keys belong only in the server environment file.
 - Browser device tokens are random, stored in an HttpOnly SameSite cookie and represented only by hashes in SQLite.

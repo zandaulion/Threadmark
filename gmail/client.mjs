@@ -1,12 +1,12 @@
 import crypto from 'node:crypto';
-import { normalizeGmailMessage, messageMetadata } from './normalize.mjs';
+import { gmailSourceId, normalizeGmailMessage, messageMetadata } from './normalize.mjs';
 
 const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
 const API_ROOT = 'https://gmail.googleapis.com/gmail/v1/users/me';
 
 export class GmailConnector {
   constructor(config, secretStore, outbox, options = {}) {
-    this.config = config;
+    this.config = { ...config, profileId: config.profileId === 'dev' ? 'dev' : 'personal' };
     this.secretStore = secretStore;
     this.outbox = outbox;
     this.fetch = options.fetch || globalThis.fetch;
@@ -32,6 +32,7 @@ export class GmailConnector {
       lastEventAt: this.lastEventAt,
       error: this.lastError,
       pollSeconds: this.config.pollSeconds,
+      profileId: this.config.profileId,
     };
   }
 
@@ -52,7 +53,7 @@ export class GmailConnector {
 
   beginAuthorization() {
     if (!this.configured()) throw statusError(503, 'Gmail OAuth is not configured.');
-    const state = crypto.randomBytes(32).toString('base64url');
+    const state = `${this.config.profileId}.${crypto.randomBytes(32).toString('base64url')}`;
     this.credentials = {
       ...this.credentials,
       oauthStateHash: hash(state),
@@ -124,7 +125,7 @@ export class GmailConnector {
   async refreshRouting() {
     if (!this.config.bridgeToken) return;
     try {
-      const response = await this.fetch(`${this.config.appUrl}/internal/routing`, {
+      const response = await this.fetch(`${this.config.appUrl}/internal/routing?profile=${encodeURIComponent(this.config.profileId)}`, {
         headers: { 'x-bridge-token': this.config.bridgeToken }, signal: AbortSignal.timeout(5000),
       });
       if (!response.ok) return;
@@ -138,8 +139,8 @@ export class GmailConnector {
     const visibleSystem = new Set(['INBOX', 'IMPORTANT', 'STARRED']);
     const sources = (Array.isArray(labels.labels) ? labels.labels : [])
       .filter((label) => label.type === 'user' || visibleSystem.has(label.id))
-      .map((label) => ({ id: `gmail:label:${label.id}`, name: label.name, kind: 'gmail_label' }));
-    this.outbox.put('gmail-labels-current', '/internal/gmail/sources', { sources });
+      .map((label) => ({ id: gmailSourceId(this.config.profileId, 'label', label.id), name: label.name, kind: 'gmail_label' }));
+    this.outbox.put(`${this.config.profileId}:gmail-labels-current`, '/internal/gmail/sources', { profileId: this.config.profileId, sources });
   }
 
   async sync() {
@@ -191,22 +192,23 @@ export class GmailConnector {
 
   async processMessage(messageId) {
     const metadataMessage = await this.api(`/messages/${encodeURIComponent(messageId)}?format=metadata&metadataHeaders=From&metadataHeaders=Subject`);
-    const metadata = messageMetadata(metadataMessage);
+    const metadata = messageMetadata(metadataMessage, this.config.profileId);
     if (!metadata.senderSourceId || metadata.labelIds.includes('SENT') || metadata.labelIds.includes('DRAFT')) return;
-    this.outbox.put(`gmail-sender:${metadata.senderSourceId}`, '/internal/gmail/sources', {
+    this.outbox.put(`${this.config.profileId}:gmail-sender:${metadata.senderSourceId}`, '/internal/gmail/sources', {
+      profileId: this.config.profileId,
       sources: [{
         id: metadata.senderSourceId,
         name: metadata.sender.name !== metadata.sender.address ? `${metadata.sender.name} · ${metadata.sender.address}` : metadata.sender.address,
         kind: 'gmail_sender',
       }],
     });
-    const candidates = [metadata.senderSourceId, ...metadata.labelIds.map((id) => `gmail:label:${id}`)];
+    const candidates = [metadata.senderSourceId, ...metadata.labelIds.map((id) => gmailSourceId(this.config.profileId, 'label', id))];
     const selectedId = candidates.find((id) => this.routing.has(id));
     if (!selectedId) return;
     const source = this.routing.get(selectedId);
     const full = await this.api(`/messages/${encodeURIComponent(messageId)}?format=full`);
-    const normalized = normalizeGmailMessage(full, source);
-    if (normalized) this.outbox.put(`gmail-message:${messageId}`, '/internal/events', normalized);
+    const normalized = normalizeGmailMessage(full, source, { profileId: this.config.profileId, account: this.credentials.email });
+    if (normalized) this.outbox.put(`${this.config.profileId}:gmail-message:${messageId}`, '/internal/events', normalized);
   }
 
   async api(pathname) {

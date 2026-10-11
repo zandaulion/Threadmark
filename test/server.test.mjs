@@ -67,6 +67,13 @@ test('invite, group selection, bridge ingestion and resolution work together', a
   t.after(async () => { await app.close(); fs.rmSync(dataDir, { recursive: true, force: true }); });
   const base = `http://127.0.0.1:${app.server.address().port}`;
 
+  const aboutResponse = await fetch(`${base}/about`);
+  assert.equal(aboutResponse.status, 200);
+  assert.match(await aboutResponse.text(), /Catch what matters/u);
+  const privacyResponse = await fetch(`${base}/privacy`);
+  assert.equal(privacyResponse.status, 200);
+  assert.match(await privacyResponse.text(), /Google API Services User Data Policy/u);
+
   const inviteResponse = await fetch(`${base}/api/admin/invites`, {
     method: 'POST', headers: { 'x-admin-token': 'a'.repeat(64), 'content-type': 'application/json' }, body: JSON.stringify({ label: 'Test phone' }),
   });
@@ -77,6 +84,21 @@ test('invite, group selection, bridge ingestion and resolution work together', a
   });
   assert.equal(redeemResponse.status, 200);
   const cookie = redeemResponse.headers.get('set-cookie').split(';')[0];
+
+  const profiles = await fetch(`${base}/api/profiles`, { headers: { cookie } }).then((response) => response.json());
+  assert.deepEqual(profiles.profiles.map(({ id, name }) => ({ id, name })), [
+    { id: 'personal', name: 'Personal' }, { id: 'dev', name: 'Dev' },
+  ]);
+  const devSummary = await fetch(`${base}/api/summary?profile=dev`, { headers: { cookie } }).then((response) => response.json());
+  assert.equal(devSummary.open, 0);
+  const devRules = await fetch(`${base}/api/rules?profile=dev`, { headers: { cookie } }).then((response) => response.json());
+  assert.equal(devRules.rules.length, 5);
+  assert.equal(devRules.rules.every((rule) => rule.profileId === 'dev' && rule.kind === 'semantic'), true);
+  const disableDevPreset = await fetch(`${base}/api/rules/${encodeURIComponent(devRules.rules[0].id)}/enabled?profile=dev`, {
+    method: 'POST', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify({ enabled: false }),
+  });
+  assert.equal(disableDevPreset.status, 200);
+  assert.equal((await disableDevPreset.json()).enabled, false);
 
   const groupId = '120363000000000000@g.us';
   const groupsResponse = await fetch(`${base}/internal/groups`, {

@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#111827">
+  <meta name="description" content="Threadmark privacy policy and Google API data-use disclosure.">
+  <link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/public.css">
+  <title>Privacy Policy · Threadmark</title>
+</head>
+<body>
+  <header class="public-header">
+    <a class="public-brand" href="/about"><img src="/icons/icon.svg" alt=""><span>Threadmark</span></a>
+    <nav class="public-nav" aria-label="Public pages"><a href="/about">About</a><a href="/">Open app</a></nav>
+  </header>
+  <main class="public-main">
+    <article class="public-card">
+      <p class="eyebrow">Privacy policy</p>
+      <h1>Your messages remain yours.</h1>
+      <p class="lede">Threadmark is a personal, self-hosted attention assistant. It processes selected WhatsApp and Gmail sources to identify information that may require action.</p>
+      <p class="meta"><strong>Effective:</strong> 11 October 2026</p>
+
+      <h2>Information Threadmark accesses</h2>
+      <p>When a mailbox is connected, Threadmark uses the read-only Gmail scope to access the account address, mailbox history checkpoint, message identifiers, labels, sender and subject metadata, and the body of new messages from labels or senders the operator has enabled. It does not import messages that predate the connection checkpoint. Gmail attachments are not downloaded.</p>
+      <p>For selected WhatsApp sources, the linked-device connector receives new message text, limited source metadata and—only when attachment processing is enabled—temporary media needed for local extraction. Unselected message content is rejected before detection and long-term storage.</p>
+
+      <h2>How the information is used</h2>
+      <p>Threadmark uses selected content to detect payments, invoices, meetings, reminders, deliveries, family or school administration, software-development events and custom monitors. It creates a private attention item containing the relevant excerpt and workflow state. Gmail access is read-only: Threadmark cannot send, delete, modify or mark email as read.</p>
+
+      <h2>Storage and retention</h2>
+      <p>Application data is stored on the operator's self-hosted server. Gmail OAuth tokens are encrypted at rest, with separate credentials and synchronization checkpoints for the Personal and Dev profiles. Matched excerpts normally use a 30-day retention period; an open item can remain longer until resolved. Connector credentials, enabled-source metadata, settings and rules remain until deliberately removed.</p>
+
+      <h2>Third-party processing</h2>
+      <p>Gmail synchronization communicates with Google. WhatsApp linked-device operation communicates with WhatsApp infrastructure. If the operator enables Jev semantic detection, selected text may be transmitted to TypeSafe AI to return classification judgments. Threadmark intentionally omits source names, email addresses, phone numbers and provider message identifiers from those semantic requests. Provider-side handling is governed by the provider's own terms.</p>
+      <p>If browser notifications are enabled, an encrypted notification payload passes through the browser vendor's push service. Depending on device settings, notification text may appear on a lock screen.</p>
+      <p>Threadmark does not sell personal data, use Gmail data for advertising, or use Gmail data to train generalized artificial-intelligence models.</p>
+
+      <div class="policy-callout"><strong>Google API Services disclosure</strong><br>Threadmark's use and transfer to any other app of information received from Google APIs adheres to the <a href="https://developers.google.com/terms/api-services-user-data-policy" rel="external">Google API Services User Data Policy</a>, including the Limited Use requirements.</div>
+
+      <h2>Security</h2>
+      <p>Threadmark uses encrypted Gmail token storage, private device invitations, HttpOnly session cookies, authenticated internal connector traffic and rootless containers. No system can eliminate all risk; anyone operating Threadmark should protect the server, backups and connected devices.</p>
+
+      <h2>Your choices and deletion</h2>
+      <ul>
+        <li>Enable only the Gmail labels, senders and WhatsApp chats you want monitored.</li>
+        <li>Disable Jev to keep rule and detector processing on the self-hosted server.</li>
+        <li>Disconnect a mailbox in Threadmark or revoke access from your Google Account permissions.</li>
+        <li>Disable browser notifications or remove an authorized Threadmark device.</li>
+        <li>Delete the self-hosted data volumes to remove locally retained application data.</li>
+      </ul>
+
+      <h2>Policy changes</h2>
+      <p>Material changes will be reflected on this page with a revised effective date.</p>
+
+      <h2>Contact</h2>
+      <p>For privacy questions, use the support address shown on Threadmark's Google authorization screen. Code-level issues may be reported through the <a href="https://github.com/zandaulion/Threadmark/issues" rel="external">public project issue tracker</a>; do not include message content, OAuth credentials or other private information in a public issue.</p>
+    </article>
+  </main>
+  <footer class="public-footer">Threadmark is an independent personal project and is not affiliated with Google or WhatsApp.</footer>
+</body>
+</html>

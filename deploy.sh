@@ -22,9 +22,9 @@ podman build --tag localhost/threadmark-app:latest --file "$ROOT/deploy/Containe
 podman build --tag localhost/threadmark-bridge:latest --file "$ROOT/deploy/Containerfile.bridge" "$ROOT"
 podman build --tag localhost/threadmark-gmail:latest --file "$ROOT/deploy/Containerfile.gmail" "$ROOT"
 
-install -d -m 0700 "$HOME/.local/share/threadmark/app" "$HOME/.local/share/threadmark/bridge" "$HOME/.local/share/threadmark/gmail"
+install -d -m 0700 "$HOME/.local/share/threadmark/app" "$HOME/.local/share/threadmark/bridge" "$HOME/.local/share/threadmark/gmail" "$HOME/.local/share/threadmark/gmail-dev"
 install -d -m 0755 "$QUADLET_DIR"
-for unit in threadmark.network threadmark-app.container threadmark-bridge.container threadmark-gmail.container; do
+for unit in threadmark.network threadmark-app.container threadmark-bridge.container threadmark-gmail.container threadmark-gmail-dev.container; do
   install -m 0644 "$ROOT/deploy/quadlet/${unit}" "$QUADLET_DIR/${unit}"
 done
 systemctl --user daemon-reload
@@ -36,4 +36,5 @@ done
 curl -fsS --max-time 2 http://127.0.0.1:4391/api/health >/dev/null
 systemctl --user restart threadmark-bridge.service
 systemctl --user restart threadmark-gmail.service
+systemctl --user restart threadmark-gmail-dev.service
 echo 'Threadmark deployed. The app is listening on 127.0.0.1:4391.'
