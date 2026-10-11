@@ -273,6 +273,14 @@ To restore, stop all services, replace every location with the matching backup, 
 - For persistent monitoring, change the OAuth consent screen from Testing to In production.
 - Inspect `threadmark-gmail` logs and reconnect if Google revoked or expired the token.
 
+**Gmail is connected but a message is not detected**
+
+- Confirm the operator is viewing the correct Personal or Dev profile.
+- In that profile's **Chats** dialog, confirm a matching Gmail label or sender is enabled. OAuth connection does not select a source, and **INBOX** is off by default.
+- Confirm an applicable rule exists in the same profile. Dev's seeded semantic monitors are not inherited by Personal.
+- Check timing: source and rule changes apply only to new mail, and a connection or reconnection starts from a current Gmail history checkpoint without backfilling earlier messages.
+- For semantic monitors, inspect the Jev state and use the synthetic sample tester. Then inspect app and profile-specific Gmail connector logs without copying message bodies or credentials into bug reports.
+
 **Push is unavailable**
 
 - Verify all three VAPID settings.

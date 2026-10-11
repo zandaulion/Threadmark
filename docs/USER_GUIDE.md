@@ -21,11 +21,11 @@ Install the PWA from the browser menu for a full-screen experience and more reli
 
 Use the **Personal / Dev** switch above the inbox. Each profile has its own feed, counters, Done/Snoozed/Promotional views, Gmail sources and rules. WhatsApp belongs to Personal. The active profile is remembered on the device, and a Dev notification opens directly in the Dev tab.
 
-The two Gmail authorizations are isolated: connecting Dev does not replace Personal. Both remain read-only and start monitoring from the moment each account is connected. Dev begins with editable semantic monitors for security/access changes, failed builds or deployments, store/policy actions, direct review requests and actionable user reports. Delete, disable or tune them from **Rules** without affecting Personal.
+The two Gmail authorizations are isolated: connecting Dev does not replace Personal. Both remain read-only, but authorization alone does not enable monitoring. After connecting either account, select at least one Gmail label or sender for that profile. Dev begins with editable semantic monitors for security/access changes, failed builds or deployments, store/policy actions, direct review requests and actionable user reports. These monitors are scoped to Dev and are not copied to Personal; delete, disable or tune them from **Rules** without affecting Personal.
 
 ## Choose monitored sources
 
-Every source is off by default. Selecting one affects only messages received afterward; Threadmark does not scan older WhatsApp or Gmail history.
+Every source is off by default, including Gmail **INBOX**. Selecting one affects only messages received afterward; Threadmark does not scan older WhatsApp or Gmail history. Connecting or reconnecting Gmail establishes a current history checkpoint, so mail received before that checkpoint is not imported later.
 
 In **Chats** for the selected profile:
 
@@ -38,6 +38,15 @@ In **Chats** for the selected profile:
 Contact import sends only the selected phone numbers to the local WhatsApp bridge for existence lookup. Imported contacts remain disabled until you turn them on.
 
 Gmail labels appear after connection. Senders are discovered from the headers of new mail and remain disabled until selected. Full bodies are fetched only after a label or sender matches; email attachments are not downloaded. A detected email card includes **Open in Gmail** under **Actions**.
+
+Rules are also profile-specific. A selected Dev source is evaluated only by Dev rules, while a selected Personal source is evaluated only by Personal rules. For example, to monitor security notices in Personal, create a semantic monitor such as:
+
+- **Name:** Security or access change
+- **Condition:** A security, authentication, permission, password, key, token, vulnerability, sign-in or account-access change affects an account or service I use.
+- **Type:** Reminder
+- **Threshold:** 80%
+- **Scope:** All monitored sources
+- **Notify:** On
 
 ## Understand the inbox
 
@@ -160,6 +169,9 @@ This is expected. Selection applies only to new messages and history is not scra
 
 **Gmail says it needs attention**
 Open **Connect** and reconnect. If this repeats after seven days, ask the administrator to move the personal OAuth consent screen out of Testing mode.
+
+**Gmail is connected but a message was missed**
+Switch to the profile that owns the account and check **Chats**. At least one matching Gmail label or sender must be enabled in that profile; **INBOX** is not enabled automatically. Then confirm that the same profile has an applicable built-in, phrase or semantic rule. Dev's preset monitors do not apply to Personal. Messages received before the latest connection or reconnection checkpoint are not backfilled. If the source and rule were active before the message arrived, inspect the Jev state and test representative synthetic wording from **Rules**.
 
 **A custom rule did not match**
 Confirm it is enabled, its scope includes the source and the message arrived after the rule was saved. Test the exact wording. For phrase rules, check the any/all setting; for semantic rules, lower the threshold carefully.

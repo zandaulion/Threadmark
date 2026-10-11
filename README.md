@@ -153,7 +153,7 @@ Open the returned URL, activate the device, connect the desired services and sel
 
 6. Select **Personal** or **Dev**, open **Connect**, authorize the matching Gmail account, then enable labels or senders under **Monitored sources**.
 
-Both connections use the same OAuth client and callback URI but store separate encrypted refresh tokens and Gmail history checkpoints. The Dev profile begins with five editable Jev monitors for security/access changes, build or deployment failures, store/policy actions, direct review requests and actionable user issues.
+Both connections use the same OAuth client and callback URI but store separate encrypted refresh tokens and Gmail history checkpoints. Connection does not enable a source: Gmail labels and senders, including **INBOX**, remain off until selected independently in each profile. Reconnection establishes a current checkpoint and does not backfill earlier mail. The Dev profile begins with five editable Jev monitors for security/access changes, build or deployment failures, store/policy actions, direct review requests and actionable user issues; these rules do not apply to Personal unless an equivalent Personal rule is created.
 
 Google OAuth apps left in External **Testing** mode issue refresh tokens that normally expire after seven days for Gmail scopes. For unattended personal monitoring, move the consent screen to **In production**. Google may show an unverified-app warning or require verification if the app is distributed to other users; Threadmark requests only `gmail.readonly` and does not publish your credentials.
 
