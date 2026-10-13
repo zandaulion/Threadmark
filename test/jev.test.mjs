@@ -145,6 +145,58 @@ test('Jev is disabled without server-side configuration', async () => {
   assert.equal(detector.status().enabled, false);
 });
 
+test('local payment verification is batched without running unrelated built-in detectors', async () => {
+  let request;
+  const detector = new JevDetector({ jevEnabled: true }, { async systemOne(value) {
+    request = value;
+    return { model: 'jev-test', answers: {
+      payment: { type: 'noul', noul: 0.04 },
+      promotional: { type: 'noul', noul: 0.98 },
+      personal_obligation: { type: 'noul', noul: 0.05 },
+      transactional: { type: 'noul', noul: 0.05 },
+      recipient_specific: { type: 'noul', noul: 0.05 },
+      date_mode: { type: 'choice', choice: 'none', confidence: 0.95 },
+      actionable_date: { type: 'noul', noul: 0.04 },
+    } };
+  } });
+  const result = await detector.evaluate('A personalized 37 RON voucher expires today.', [], {
+    includeBuiltIns: false, verifyPayment: true, attentionSignals: true, extractDate: true,
+  });
+  assert.ok(request.questions.payment);
+  assert.equal(request.questions.meeting, undefined);
+  assert.equal(result.scores.payment, 0.04);
+  assert.equal(result.dateEvaluated, true);
+  assert.equal(result.date, null);
+  assert.deepEqual(result.detections, []);
+});
+
+test('missing payment or relevance answers are not interpreted as negative judgments', async () => {
+  const detector = new JevDetector({ jevEnabled: true }, { async systemOne() {
+    return { model: 'jev-test', answers: { promotional: { type: 'noul', noul: 0.99 } } };
+  } });
+  const result = await detector.evaluate('Payment: 37 RON.', [], { includeBuiltIns: false, verifyPayment: true, attentionSignals: true, extractDate: true });
+  assert.equal(result.scores.payment, undefined);
+  assert.equal(result.signals.personalObligation, undefined);
+  assert.equal(result.signals.transactional, undefined);
+  assert.equal(result.dateEvaluated, false);
+});
+
+test('date choices are ignored when the independent actionable-date judgment rejects them', async () => {
+  const answer = (choice) => ({ type: 'choice', choice, confidence: 0.95 });
+  const detector = new JevDetector({ jevEnabled: true }, { async systemOne() {
+    return { model: 'jev-test', answers: {
+      actionable_date: { type: 'noul', noul: 0.08 },
+      date_mode: answer('relative'), date_anchor: answer('tomorrow'),
+      date_hour: answer('23'), date_minute: answer('42'),
+    } };
+  } });
+  const result = await detector.evaluate('An article describes an example routine tomorrow at 11:42 pm.', [], {
+    includeBuiltIns: false, extractDate: true, referenceAt: '2026-10-01T10:00:00Z',
+  });
+  assert.equal(result.dateEvaluated, true);
+  assert.equal(result.date, null);
+});
+
 test('Jev receives only safe channel hints plus text and direction labels when context is explicitly enabled', async () => {
   let request;
   const answer = (choiceValue, confidence = 0.95) => ({ type: 'choice', choice: choiceValue, confidence, probabilities: { [choiceValue]: 1 } });
@@ -156,6 +208,7 @@ test('Jev receives only safe channel hints plus text and direction labels when c
         changes_previous: { type: 'noul', noul: 0.91 }, cancels_previous: { type: 'noul', noul: 0.04 },
         reply_needed: { type: 'noul', noul: 0.87 }, suspicious_payment: { type: 'noul', noul: 0.03 },
         date_mode: answer('relative'), date_month: answer('none'), date_day: answer('none'), date_year: answer('none'),
+        actionable_date: { type: 'noul', noul: 0.95 },
         date_anchor: answer('tomorrow'), date_weekday: answer('none'), date_week_offset: answer('none'),
         date_hour: answer('18'), date_minute: answer('30'),
       },

@@ -87,3 +87,20 @@ test('detects a meeting with date and time', () => {
 test('ignores ordinary conversation', () => {
   assert.deepEqual(detectAttention({ text: 'Mulțumesc, am văzut fotografia.' }), []);
 });
+
+test('currency symbols do not turn an option expiry day into a payment amount', () => {
+  const text = 'Market example: holders of the Nov 17 $12 call may get paid if the stock rises.';
+  const items = detectAttention({ text });
+  assert.equal(items.find((item) => item.type === 'payment')?.amountMinor, 1200);
+  assert.equal(items.some((item) => item.type === 'meeting'), false);
+  for (const text of ['Payment due: $12.50.', 'Payment due: 12.50 $.', 'Plata este RON 12,50.']) {
+    assert.equal(detectAttention({ text })[0].amountMinor, 1250);
+  }
+});
+
+test('meeting detection cannot combine financial decimals and unrelated narrative clocks', () => {
+  const text = 'The example starts at 11:42 pm.\n\nRevenue is 1.6% ahead and performance is 3.4 times higher.\n\nDiscuss these ideas at your board meeting.';
+  assert.equal(detectAttention({ text }).some((item) => item.type === 'meeting'), false);
+  const actual = detectAttention({ text: 'Meeting on 17.11.2026 at 11:42 pm.', sentAt: '2026-10-01T10:00:00Z' });
+  assert.equal(actual[0].eventAt, '2026-11-17T23:42:00.000Z');
+});

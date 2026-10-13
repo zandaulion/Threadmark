@@ -26,7 +26,7 @@ Each Gmail profile begins at its own current mailbox checkpoint and does not imp
 | Gmail synchronization | Google Gmail API | OAuth tokens, message IDs, labels/headers, and complete bodies only for enabled sources |
 | Jev enabled, local checks find no match | TypeSafe AI | Selected message text and batched semantic questions, including the narrow invoice judgment |
 | Jev enabled, local checks find a Gmail meeting candidate | TypeSafe AI | Selected email text and batched semantic questions used to confirm or reject the meeting |
-| Jev enabled, local checks create any other alert candidate | TypeSafe AI | Selected message text and sanitized channel/bulk-mail booleans used to estimate promotional purpose, obligation, transactional relevance and recipient specificity; a narrow Gmail policy can route the item quietly to Promotional |
+| Jev enabled, local checks create any other alert candidate | TypeSafe AI | Selected message text and sanitized channel/bulk-mail booleans used to estimate promotional purpose, obligation, transactional relevance and recipient specificity, with a focused payment judgment for generic payment matches; a narrow Gmail policy can route the item quietly to Promotional |
 | Semantic rule sample test | TypeSafe AI | The sample text and monitor condition |
 | Context/reply features enabled | TypeSafe AI | Current text plus up to six recent selected-source text snippets and direction labels |
 | Web Push enabled | Browser push service | Notification title, selected source name, matched title, item URL/tag/identifier and Done/Actions metadata |

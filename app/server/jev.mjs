@@ -5,8 +5,8 @@ const QUESTIONS = {
   payment: noul(
     'Does the message in `message` contain a payment matter that the recipient should notice or act on? The message may be Romanian or English.',
     {
-      true: 'The recipient may need to pay, transfer, collect, confirm, record, or follow up about money, fees, dues, contributions, invoices, refunds, or bank details.',
-      false: 'There is no actionable or important payment matter for the recipient. A receipt or confirmation for money already paid is informational unless it explicitly asks the recipient to act.',
+      true: 'A real financial matter applies to the recipient: money owed, requested, collected, refunded, an invoice, dues, contribution, or bank instructions for an existing obligation or transaction.',
+      false: 'No real financial matter applies to the recipient. Discounts, vouchers, coupons, optional purchases, investment commentary, hypothetical examples, and prices in general articles do not count. A paid receipt is informational unless it asks the recipient to act.',
     },
   ),
   meeting: noul(
@@ -20,7 +20,7 @@ const QUESTIONS = {
     'Does the message in `message` give the recipient a non-payment, non-meeting task or deadline that they should remember? The message may be Romanian or English.',
     {
       true: 'The recipient is asked or reminded to bring, submit, sign, complete, confirm, reply, or otherwise follow up on something.',
-      false: 'There is no task or deadline, or the only matter is a payment or meeting already covered by another category.',
+      false: 'There is no task or deadline, or the only matter is a payment or meeting already covered by another category. General advice, rhetorical questions, optional offers, and newsletter suggestions are not personal tasks.',
     },
   ),
 };
@@ -37,7 +37,7 @@ const SIGNAL_QUESTIONS = {
     'Does the message in `message` require prompt attention or action from the recipient today or very soon? The message may be Romanian or English.',
     {
       true: 'Delay could cause a missed deadline, failed obligation, lost opportunity, safety issue, or other meaningful problem; explicit urgency or a near deadline counts.',
-      false: 'The message is informational, routine, optional, or can reasonably wait without a meaningful consequence.',
+      false: 'The message is informational, routine, optional, or can reasonably wait without a meaningful consequence. An expiring voucher, sale or optional offer alone is not urgent.',
     },
   ),
 };
@@ -54,21 +54,21 @@ const ATTENTION_QUESTIONS = {
     'Does `message` communicate a concrete obligation, commitment, deadline, reply, payment, attendance requirement, or decision that applies specifically to the recipient? When `message_context` is present, use it to distinguish a direct request from a general or optional appeal. The message may be Romanian or English.',
     {
       true: 'The recipient is personally expected or required to act, reply, pay, attend, provide something, make a decision, or meet a deadline, with a meaningful consequence for ignoring it.',
-      false: 'Any call to action is generic, rhetorical, promotional, advisory, or optional; a question to a group is not clearly directed at this recipient; or no concrete recipient obligation exists.',
+      false: 'Any call to action is generic, rhetorical, promotional, advisory, or optional; a question to a group is not clearly directed at this recipient; or no concrete recipient obligation exists. A personalized, exclusive or non-transferable coupon and its expiry date do not create an obligation to buy.',
     },
   ),
   transactional: noul(
     'Is `message` primarily about an existing transaction, service, account, order, delivery, reservation, ticket, bill, subscription, security matter, school or family administration, or another established relationship involving the recipient? The message may be Romanian or English.',
     {
       true: 'It concerns something the recipient already has, requested, owes, booked, ordered, uses, administers, or must handle, including a real invoice, service change, booking update, school form, or account alert.',
-      false: 'It is mainly acquisition marketing, general content, an optional event or offer, or has no concrete existing relationship or administrative matter for the recipient.',
+      false: 'It is mainly acquisition marketing, general content, an optional event or offer, or has no concrete existing relationship or administrative matter for the recipient. A coupon available in an existing account is still an optional offer, not an existing transaction.',
     },
   ),
   recipient_specific: noul(
     'Does `message` concern the recipient\'s own account, order, booking, delivery, bill, subscription, configuration, relationship, or required administrative matter rather than a broad announcement for many recipients? When `message_context` is present, use it only as supporting evidence. The message may be Romanian or English.',
     {
       true: 'The message is tied to something specific to this recipient, such as their actual account, transaction, service state, reservation, child, household, application, or required decision.',
-      false: 'It is a general product update, broad announcement, marketing campaign, newsletter, generic advice, or optional opportunity without evidence that it affects this recipient specifically.',
+      false: 'It is a general product update, broad announcement, marketing campaign, newsletter, generic advice, or optional opportunity without evidence that it affects this recipient specifically. Marketing personalization or a coupon in an account alone does not establish a required matter.',
     },
   ),
 };
@@ -93,8 +93,15 @@ const CONTEXT_QUESTIONS = {
 };
 
 const DATE_QUESTIONS = {
+  actionable_date: noul(
+    'Does `message` state a real deadline or scheduled event time for an actual obligation, task, transaction or event involving the recipient?',
+    {
+      true: 'A stated date or relative day tells this recipient when to perform an actual requested task, pay an existing bill, attend a concrete event, or handle an existing transaction or service.',
+      false: 'Dates or times occur only in a story, example, historical account, general advice, market commentary, or an optional coupon, promotion or offer. These do not establish a recipient deadline.',
+    },
+  ),
   date_mode: choice('How is the actionable deadline or event date in `message` written?', {
-    absolute: 'A calendar date with a day and month is stated.', relative: 'Today, tomorrow, the day after tomorrow, or a weekday is stated.', none: 'No actionable deadline or event date is stated.',
+    absolute: 'A calendar date with a day and month applies to the recipient\'s actual task, obligation or event.', relative: 'Today, tomorrow, the day after tomorrow, or a weekday applies to the recipient\'s actual task, obligation or event.', none: 'No actionable deadline or event date is stated. Ignore dates in stories, historical examples, general advice, market commentary, percentages, performance multipliers, and optional offer expiry dates.',
   }),
   date_month: choice('If an absolute actionable date is stated, which month number is it?', Object.fromEntries([...Array(12)].map((_, index) => [String(index + 1), null]).concat([['none', 'No month is stated.']]))),
   date_day: choice('If an absolute actionable date is stated, which day of the month is it?', Object.fromEntries([...Array(31)].map((_, index) => [String(index + 1), null]).concat([['none', 'No day is stated.']]))),
@@ -152,12 +159,14 @@ export class JevDetector {
     const message = String(text || '').trim().slice(0, 12_000);
     if (!message) return { ...this.status(), available: true, scores: {}, detections: [] };
     const includeBuiltIns = options.includeBuiltIns !== false;
+    const verifyPayment = Boolean(options.verifyPayment);
     const includeContext = Boolean(options.contextAware || options.replyNeeded || options.paymentSafety);
     const includeDate = Boolean(options.extractDate);
     const includeAttentionSignals = includeBuiltIns || Boolean(options.attentionSignals);
     const semanticMonitors = normaliseMonitors(monitors);
     const questions = {
       ...(includeBuiltIns ? { ...QUESTIONS, ...SIGNAL_QUESTIONS } : {}),
+      ...(!includeBuiltIns && verifyPayment ? { payment: QUESTIONS.payment } : {}),
       ...(includeAttentionSignals ? ATTENTION_QUESTIONS : {}),
       ...(includeContext ? CONTEXT_QUESTIONS : {}),
       ...(includeDate ? DATE_QUESTIONS : {}),
@@ -191,7 +200,10 @@ export class JevDetector {
       }, { timeout: this.timeout, retry: { maxRetries: 0 } });
       const scores = includeBuiltIns
         ? Object.fromEntries(Object.keys(TITLES).map((key) => [key, probability(response.answers?.[key]?.noul)]))
-        : {};
+        : verifyPayment && validProbability(response.answers?.payment?.noul)
+          ? { payment: probability(response.answers.payment.noul) } : {};
+      if (verifyPayment && !validProbability(response.answers?.payment?.noul)) delete scores.payment;
+      const dateEvaluated = includeDate && validProbability(response.answers?.actionable_date?.noul);
       const signals = includeBuiltIns
         ? {
           invoice: probability(response.answers?.invoice?.noul),
@@ -199,10 +211,10 @@ export class JevDetector {
         }
         : {};
       if (includeAttentionSignals) {
-        signals.promotional = probability(response.answers?.promotional?.noul);
-        signals.personalObligation = probability(response.answers?.personal_obligation?.noul);
-        signals.transactional = probability(response.answers?.transactional?.noul);
-        signals.recipientSpecific = probability(response.answers?.recipient_specific?.noul);
+        signals.promotional = validProbability(response.answers?.promotional?.noul) ? response.answers.promotional.noul : undefined;
+        signals.personalObligation = validProbability(response.answers?.personal_obligation?.noul) ? response.answers.personal_obligation.noul : undefined;
+        signals.transactional = validProbability(response.answers?.transactional?.noul) ? response.answers.transactional.noul : undefined;
+        signals.recipientSpecific = validProbability(response.answers?.recipient_specific?.noul) ? response.answers.recipient_specific.noul : undefined;
       }
       if (includeContext) {
         signals.changesPrevious = probability(response.answers?.changes_previous?.noul);
@@ -210,7 +222,7 @@ export class JevDetector {
         signals.replyNeeded = probability(response.answers?.reply_needed?.noul);
         signals.suspiciousPayment = probability(response.answers?.suspicious_payment?.noul);
       }
-      const date = includeDate ? resolveJevDate({
+      const date = dateEvaluated && response.answers.actionable_date.noul >= 0.8 ? resolveJevDate({
         mode: response.answers?.date_mode,
         month: response.answers?.date_month,
         day: response.answers?.date_day,
@@ -265,7 +277,7 @@ export class JevDetector {
             },
           }];
         } else {
-          const [category, confidence] = Object.entries(scores).sort((left, right) => right[1] - left[1])[0];
+          const [category, confidence] = Object.entries(scores).sort((left, right) => right[1] - left[1])[0] || ['payment', 0];
           detections = confidence >= this.threshold ? [{
             type: category,
             key: `jev-${category}`,
@@ -281,7 +293,7 @@ export class JevDetector {
         }
       }
       this.lastSuccessAt = new Date().toISOString();
-      return { ...this.status(), available: true, model: response.model || this.model, scores, signals, date, monitorScores, detections };
+      return { ...this.status(), available: true, model: response.model || this.model, scores, signals, date, dateEvaluated, monitorScores, detections };
     } catch (error) {
       this.lastFailureAt = new Date().toISOString();
       console.warn(`Jev detection unavailable (${error?.name || 'Error'}${Number.isInteger(error?.status) ? ` ${error.status}` : ''}).`);
@@ -348,6 +360,10 @@ function normaliseMonitors(monitors) {
 function probability(value) {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? Math.min(Math.max(numeric, 0), 1) : 0;
+}
+
+function validProbability(value) {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1;
 }
 
 function boundedNumber(value, fallback, minimum, maximum) {

@@ -11,20 +11,21 @@ const WEEKDAYS = new Map([
   ['saturday', 6], ['sambata', 6],
 ]);
 
-export function extractDueAt(text, referenceAt = new Date().toISOString()) {
-  const source = fold(text);
+const ACTION_DATE_CONTEXT = /\b(pay|payment|due|deadline|meeting|appointment|class|call|attend|submit|sign|complete|confirm|reply|bring|send|deliver|delivery|pickup|pick up|reservation|booking|expires?|renew|plata|plateste|achita|scadenta?|termen|sedinta|intalnire|programare|formular|trimite|aduce|adu|confirma|raspunde|ridica|livrare|rezervare|expira)\b/u;
+
+export function extractDueAt(text, referenceAt = new Date().toISOString(), { requireAction = false } = {}) {
+  const source = fold(text).replace(/https?:\/\/\S+/gu, '');
   if (!source) return null;
   const reference = validDate(referenceAt) || new Date();
-  const time = extractTime(source);
-  let date = numericDate(source, reference) || namedDate(source, reference) || relativeDate(source, reference);
-  if (!date) return null;
-  date.setHours(time?.hour ?? 9, time?.minute ?? 0, 0, 0);
-  return {
-    dueAt: date.toISOString(),
-    confidence: time ? 0.94 : 0.84,
-    source: 'local',
-    hasTime: Boolean(time),
-  };
+  for (const block of source.split(/\n\s*\n/u)) {
+    if (requireAction && !ACTION_DATE_CONTEXT.test(block)) continue;
+    const time = findClockTime(block);
+    const date = numericDate(block, reference) || namedDate(block, reference) || relativeDate(block, reference);
+    if (!date) continue;
+    date.setHours(time?.hour ?? 9, time?.minute ?? 0, 0, 0);
+    return { dueAt: date.toISOString(), confidence: time ? 0.94 : 0.84, source: 'local', hasTime: Boolean(time) };
+  }
+  return null;
 }
 
 export function resolveJevDate(parts, referenceAt = new Date().toISOString()) {
@@ -66,7 +67,7 @@ export function resolveJevDate(parts, referenceAt = new Date().toISOString()) {
 }
 
 function numericDate(text, reference) {
-  const match = text.match(/\b(\d{1,2})[./-](\d{1,2})(?:[./-](\d{2,4}))?\b/u);
+  const match = findNumericDate(text);
   if (!match) return null;
   const day = Number(match[1]);
   const month = Number(match[2]);
@@ -104,14 +105,34 @@ function relativeDate(text, reference) {
   return null;
 }
 
-function extractTime(text) {
-  const match = text.match(/\b(?:at|ora|de la|la)?\s*([01]?\d|2[0-3])[:.]([0-5]\d)\b/u);
-  if (match) return { hour: Number(match[1]), minute: Number(match[2]) };
-  const ampm = text.match(/\b(?:at|ora|de la|la)\s+(1[0-2]|0?[1-9])(?:\s*:\s*([0-5]\d))?\s*(am|pm)\b/u);
-  if (!ampm) return null;
-  let hour = Number(ampm[1]) % 12;
-  if (ampm[3] === 'pm') hour += 12;
-  return { hour, minute: Number(ampm[2] || 0) };
+export function findNumericDate(text) {
+  const candidates = /(?<![\p{L}\p{N}.,$€])(\d{1,2})[./-](\d{1,2})(?:[./-](\d{2,4}))?(?![\p{L}\p{N}%]|\.\d)/gu;
+  for (const match of String(text || '').matchAll(candidates)) {
+    const suffix = text.slice(match.index + match[0].length);
+    if (/^\s*(?:%|times\b|x\b|fold\b|percent\b|million\b|billion\b)/iu.test(suffix)) continue;
+    const day = Number(match[1]);
+    const month = Number(match[2]);
+    let year = match[3] ? Number(match[3]) : 2000;
+    if (year < 100) year += 2000;
+    const date = new Date(Date.UTC(year, month - 1, day));
+    if (date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day) return match;
+  }
+  return null;
+}
+
+export function findClockTime(text) {
+  const source = fold(text);
+  const match = source.match(/\b([01]?\d|2[0-3]):([0-5]\d)(?:\s*(a\.?m\.?|p\.?m\.?))?(?!\d)/u)
+    || source.match(/\b(?:at|ora|de la|la)\s+([01]?\d|2[0-3])\.([0-5]\d)(?![\d.])/u);
+  const bare = match ? null : source.match(/\b(1[0-2]|0?[1-9])\s*(a\.?m\.?|p\.?m\.?)(?!\p{L})/u);
+  if (!match && !bare) return null;
+  let hour = Number(match?.[1] || bare[1]);
+  const meridiem = match?.[3] || bare?.[2];
+  if (meridiem) {
+    if (hour < 1 || hour > 12) return null;
+    hour = hour % 12 + (meridiem.startsWith('p') ? 12 : 0);
+  }
+  return { hour, minute: Number(match?.[2] || 0) };
 }
 
 function fold(value) {

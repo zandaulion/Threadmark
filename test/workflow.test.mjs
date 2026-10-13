@@ -14,6 +14,61 @@ test('normalizes Romanian and English deadlines locally', () => {
   assert.equal(extractDueAt('No date here', '2026-10-01T10:00:00Z'), null);
 });
 
+test('deadline extraction rejects financial decimals and respects clock context', () => {
+  const reference = '2026-10-01T10:00:00+03:00';
+  for (const text of ['Performance improved 3.4 times.', 'Revenue is 1.6% ahead.', 'Share price is $3.12.']) {
+    assert.equal(extractDueAt(text, reference), null);
+  }
+  assert.equal(extractDueAt('Please pay by 17.11.2026.', reference).dueAt, '2026-11-17T07:00:00.000Z');
+  assert.equal(extractDueAt('Please reply tomorrow at 11:42 pm.', reference).dueAt, '2026-10-02T20:42:00.000Z');
+  assert.equal(extractDueAt('Trimite formularul mâine la 18.30', reference).dueAt, '2026-10-02T15:30:00.000Z');
+  assert.equal(extractDueAt('Yesterday the author rested. Tomorrow is discussed in a story.', reference, { requireAction: true }), null);
+});
+
+test('an explicit Jev no-deadline judgment prevents local fallback from restoring story dates', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'threadmark-no-deadline-'));
+  const db = openDatabase(directory);
+  try {
+    const store = new ThreadmarkStore(db);
+    const id = '15550100007@s.whatsapp.net';
+    store.upsertContacts([{ id, name: 'Synthetic contact' }]);
+    store.selectContact(id, true);
+    const result = store.ingestMessage({ id: 'story-no-deadline', sourceId: id, sourceName: 'Synthetic contact', sourceKind: 'contact', sentAt: '2026-10-01T10:00:00Z', text: 'An article suggests a reply tomorrow at 11:42.' }, [{
+      type: 'reminder', key: 'synthetic', title: 'Synthetic reminder', confidence: 0.9,
+      amountMinor: null, currency: null, eventAt: null, details: { detector: 'jev', dateEvaluated: true },
+    }], { includeLocal: false });
+    assert.equal(result.items[0].eventAt, null);
+  } finally { db.close(); fs.rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('Gmail payment history is isolated by sender and ignores rejected or promotional candidates', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'threadmark-payment-history-'));
+  const db = openDatabase(directory);
+  try {
+    const store = new ThreadmarkStore(db);
+    const inbox = { id: 'gmail:label:INBOX', name: 'Inbox', kind: 'gmail_label' };
+    const bills = { id: 'gmail:label:synthetic-bills', name: 'Synthetic bills', kind: 'gmail_label' };
+    store.upsertGmailSources([inbox, bills]);
+    store.selectGmailSource(inbox.id, true);
+    store.selectGmailSource(bills.id, true);
+    const send = (id, sender, amount, source = inbox, additionalDetails = {}) => store.ingestMessage({
+      id, sourceId: source.id, sourceName: source.name, sourceKind: source.kind, senderId: sender,
+      senderName: 'Synthetic provider', text: `Payment: ${amount} RON.`, sentAt: new Date().toISOString(),
+    }, [{ type: 'payment', key: 'payment', title: 'Synthetic payment', confidence: 0.9, amountMinor: amount * 100, currency: 'RON', eventAt: null, details: additionalDetails }], { includeLocal: false }).items[0];
+    send('provider-a-first', 'gmail:sender:provider-a', 45);
+    const other = send('provider-b-first', 'gmail:sender:provider-b', 90);
+    assert.equal(other.details.safetyAlerts, undefined);
+    const same = send('provider-a-second', 'gmail:sender:provider-a', 55, bills);
+    assert.ok(same.details.safetyAlerts.includes('Amount differs from the previous payment request'));
+    store.setItemFeedback(same.id, { feedback: 'not_relevant' });
+    const promotion = send('provider-a-promo', 'gmail:sender:provider-a', 999, inbox, { attentionTriage: { disposition: 'promotional' } });
+    assert.equal(promotion.details.safetyAlerts, undefined);
+    const genuine = send('provider-a-third', 'gmail:sender:provider-a', 45);
+    assert.equal(genuine.details.safetyAlerts.some((alert) => alert.includes('Amount differs')), false);
+    assert.ok(genuine.details.safetyAlerts.includes('Possible duplicate payment request'));
+  } finally { db.close(); fs.rmSync(directory, { recursive: true, force: true }); }
+});
+
 test('workflow preferences, feedback, snoozing, reply completion and payment warnings stay local', () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'threadmark-workflow-'));
   const db = openDatabase(directory);
@@ -26,9 +81,9 @@ test('workflow preferences, feedback, snoozing, reply completion and payment war
     assert.equal(settings.outgoingMonitoring, true);
     assert.equal(store.routingConfig().sourceIds[0], sourceId);
 
-    const first = store.ingestMessage({ id: 'pay-1', groupId: sourceId, groupName: 'Family', senderName: 'Sample Sender', sentAt: '2026-10-01T10:00:00Z', text: 'Plata este 50 lei în RO00TEST0000000000000000.' });
+    const first = store.ingestMessage({ id: 'pay-1', groupId: sourceId, groupName: 'Family', senderId: '15550100008@s.whatsapp.net', senderName: 'Sample Sender', sentAt: '2026-10-01T10:00:00Z', text: 'Plata este 50 lei în RO00TEST0000000000000000.' });
     assert.equal(first.items.length, 1);
-    const second = store.ingestMessage({ id: 'pay-2', groupId: sourceId, groupName: 'Family', senderName: 'Sample Sender', sentAt: '2026-10-01T11:00:00Z', text: 'Plata este 50 lei în RO00DEMO0000000000000000.' });
+    const second = store.ingestMessage({ id: 'pay-2', groupId: sourceId, groupName: 'Family', senderId: '15550100008@s.whatsapp.net', senderName: 'Sample Sender', sentAt: '2026-10-01T11:00:00Z', text: 'Plata este 50 lei în RO00DEMO0000000000000000.' });
     assert.ok(second.items[0].details.safetyAlerts.some((alert) => alert.includes('Bank details changed')));
 
     store.ingestMessage({ id: 'subscription-1', groupId: sourceId, groupName: 'Family', senderName: 'Store', sentAt: '2026-10-01T11:05:00Z', text: 'Your subscription has renewed. Receipt total: 49,99 RON.' });

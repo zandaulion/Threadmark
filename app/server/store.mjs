@@ -443,11 +443,11 @@ export class ThreadmarkStore {
 
   enrichDetections(message, source, detections) {
     const unique = new Map();
-    const localDate = extractDueAt(message.text, message.sentAt);
+    const localDate = extractDueAt(message.text, message.sentAt, { requireAction: true });
     for (const raw of detections) {
       if (!raw || !['payment', 'meeting', 'reminder'].includes(raw.type)) continue;
       const detection = { ...raw, details: { ...(raw.details || {}) } };
-      if (!detection.eventAt && localDate) {
+      if (!detection.eventAt && !detection.details.dateEvaluated && localDate) {
         detection.eventAt = localDate.dueAt;
         detection.details.dueAtSource = localDate.source;
         detection.details.dueAtConfidence = localDate.confidence;
@@ -459,10 +459,17 @@ export class ThreadmarkStore {
   }
 
   addPaymentSafety(source, message, detection) {
+    if (detection.details?.attentionTriage?.disposition === 'promotional') return;
     const alerts = [];
     const text = String(message.text || '');
     const currentIban = detection.details?.iban || text.match(/\b[A-Z]{2}\d{2}[A-Z0-9]{11,30}\b/u)?.[0] || null;
-    const previous = this.db.prepare(`${itemSelect()} WHERE g.id=? AND a.type='payment' ORDER BY a.created_at DESC LIMIT 1`).get(source.id);
+    const gmail = ['gmail_label', 'gmail_sender'].includes(source.kind);
+    const senderId = String(message.senderId || '').slice(0, 160);
+    const priorScope = gmail ? 'g.profile_id=? AND m.sender_id=?' : "g.id=? AND COALESCE(m.sender_id, '')=?";
+    const previous = !senderId ? null : this.db.prepare(`${itemSelect()} WHERE ${priorScope} AND a.type='payment'
+      AND COALESCE(a.feedback, '')!='not_relevant'
+      AND COALESCE(json_extract(a.details_json, '$.attentionTriage.disposition'), '')!='promotional'
+      ORDER BY a.created_at DESC LIMIT 1`).get(gmail ? profileFromMessage(message) : source.id, senderId);
     const previousDetails = previous ? safeJson(previous.details_json) : {};
     if (!detection.details?.subscription) {
       if (currentIban && previousDetails.iban && currentIban !== previousDetails.iban) alerts.push('Bank details changed since the previous payment request');

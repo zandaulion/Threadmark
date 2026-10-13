@@ -19,7 +19,7 @@ const CONTENT_TYPES = {
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
 };
-const GMAIL_PROMOTIONAL_POLICY = 'gmail-promo-v1';
+const GMAIL_PROMOTIONAL_POLICY = 'gmail-promo-v2';
 const GMAIL_PROMOTIONAL_THRESHOLD = 0.95;
 const GMAIL_PERSONAL_OBLIGATION_CEILING = 0.30;
 
@@ -131,13 +131,17 @@ export function createThreadmarkServer(options = {}) {
           const informationalReceipt = isInformationalReceipt(body.text);
           const verifyGmailMeeting = isGmailSource(selection.source)
             && localDetections.some((detection) => detection.type === 'meeting');
+          const verifyPayment = localDetections.some((detection) => detection.type === 'payment'
+            && !detection.details?.invoice && !detection.details?.subscription
+            && !detection.details?.ruleId && !detection.details?.monitorId);
           const context = settings.contextAware || settings.outgoingMonitoring ? store.recentContext(body) : [];
           const semanticRules = store.applicableSemanticRules(body);
           const attentionShadow = Boolean(jev.status()?.enabled && localDetections.length);
-          const shouldUseJev = (!informationalReceipt && (!localDetections.length || verifyGmailMeeting))
+          const shouldUseJev = (!informationalReceipt && (!localDetections.length || verifyGmailMeeting || verifyPayment))
             || semanticRules.length || settings.contextAware || settings.outgoingMonitoring || attentionShadow;
           const analysis = shouldUseJev ? await jev.evaluate(body.text, semanticRules, {
             includeBuiltIns: !informationalReceipt && (!localDetections.length || verifyGmailMeeting),
+            verifyPayment,
             attentionSignals: true,
             contextAware: settings.contextAware,
             replyNeeded: settings.outgoingMonitoring,
@@ -152,6 +156,13 @@ export function createThreadmarkServer(options = {}) {
             ? (analysis.detections || []).filter((detection) => detection.key !== 'jev-meeting')
             : (analysis.detections || []);
           let detections = [...verifiedLocal, ...semanticDetections];
+          if (analysis.available && analysis.dateEvaluated) {
+            detections = detections.map((detection) => ({
+              ...detection,
+              eventAt: analysis.date?.dueAt || null,
+              details: { ...(detection.details || {}), dateEvaluated: true, dueAtSource: analysis.date?.source || null },
+            }));
+          }
           if (analysis.signals?.replyNeeded >= 0.82 && !detections.some((item) => item.type === 'reminder')) {
             const dueAt = new Date(new Date(body.sentAt || Date.now()).valueOf() + settings.replyDelayHours * 3_600_000).toISOString();
             detections.push({
@@ -573,11 +584,9 @@ function messageContextForJev(message, source) {
 
 function applyAttentionTriage(detections, analysis, source) {
   if (!analysis?.available) return detections;
-  const promotional = Number(analysis.signals?.promotional);
-  const personalObligation = Number(analysis.signals?.personalObligation);
-  const transactional = Number(analysis.signals?.transactional);
-  const recipientSpecific = Number(analysis.signals?.recipientSpecific);
-  if (![promotional, personalObligation, transactional, recipientSpecific].every(Number.isFinite)) return detections;
+  const { promotional, personalObligation, transactional, recipientSpecific } = analysis.signals || {};
+  if (![promotional, personalObligation, transactional, recipientSpecific]
+    .every((value) => typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1)) return detections;
   const gmailSource = isGmailSource(source);
   const attentionTriage = {
     mode: gmailSource ? 'active' : 'shadow',
@@ -590,13 +599,26 @@ function applyAttentionTriage(detections, analysis, source) {
   };
   return detections.map((detection) => {
     const details = { ...(detection.details || {}), attentionTriage: { ...attentionTriage } };
-    const protectedDetection = detection.type === 'payment' || details.ruleId || details.monitorId || details.needsReview;
-    const promotionalDisposition = gmailSource && !protectedDetection
-      && promotional >= GMAIL_PROMOTIONAL_THRESHOLD
-      && personalObligation <= GMAIL_PERSONAL_OBLIGATION_CEILING;
+    const paymentProbability = analysis.scores?.payment;
+    const genericPayment = detection.type === 'payment' && !details.invoice && !details.subscription
+      && !details.ruleId && !details.monitorId && !details.paymentRequest && !details.iban;
+    const rejectedPayment = genericPayment && typeof paymentProbability === 'number'
+      && Number.isFinite(paymentProbability) && paymentProbability >= 0 && paymentProbability <= 0.2;
+    if (genericPayment && typeof paymentProbability === 'number' && Number.isFinite(paymentProbability)) {
+      details.paymentVerification = { detector: 'jev', model: analysis.model || null, probability: paymentProbability };
+    }
+    const protectedDetection = (detection.type === 'payment' && !rejectedPayment)
+      || details.ruleId || details.monitorId || details.needsReview;
+    const lowRelevancePromotion = promotional >= 0.85 && personalObligation <= 0.15
+      && transactional <= 0.15 && recipientSpecific <= 0.15;
+    const promotionalDisposition = gmailSource && !protectedDetection && (
+      (promotional >= GMAIL_PROMOTIONAL_THRESHOLD && personalObligation <= GMAIL_PERSONAL_OBLIGATION_CEILING)
+      || lowRelevancePromotion
+      || (rejectedPayment && promotional >= 0.85)
+    );
     if (!promotionalDisposition) return { ...detection, details };
     details.attentionTriage.disposition = 'promotional';
-    return { ...detection, notify: false, details };
+    return { ...detection, eventAt: null, notify: false, details: { ...details, dateEvaluated: true, dueAtSource: null } };
   });
 }
 

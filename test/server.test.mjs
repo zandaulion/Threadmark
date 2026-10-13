@@ -261,7 +261,7 @@ test('concrete invoices are detected locally for WhatsApp and Gmail', async (t) 
   });
   assert.deepEqual(gmail.items[0].details.attentionTriage, {
     mode: 'active', promotional: 0.04, personalObligation: 0.91, transactional: 0.96,
-    recipientSpecific: 0.98, model: 'jev-test', policy: 'gmail-promo-v1',
+    recipientSpecific: 0.98, model: 'jev-test', policy: 'gmail-promo-v2',
   });
   assert.equal(jevCalls, 2, 'strong local invoice signals are scored but remain protected from promotional routing');
 
@@ -339,7 +339,7 @@ test('high-confidence Gmail promotions are quiet and recoverable without weakeni
   assert.equal(promotion.items.length, 1);
   assert.equal(promotion.items[0].notify, false);
   assert.equal(promotion.items[0].details.attentionTriage.disposition, 'promotional');
-  assert.equal(promotion.items[0].details.attentionTriage.policy, 'gmail-promo-v1');
+  assert.equal(promotion.items[0].details.attentionTriage.policy, 'gmail-promo-v2');
   assert.equal(app.store.listItems({ status: 'open' }).length, 0);
   assert.deepEqual(app.store.listItems({ status: 'promotional' }).map((item) => item.id), [promotion.items[0].id]);
   assert.equal(app.store.summary().open, 0);
@@ -426,6 +426,100 @@ test('Gmail local meeting matches require Jev confirmation and fail open when Je
   assert.equal(failOpen.items[0].details.verification, undefined);
   assert.equal(calls.length, 3);
   assert.equal(calls.every((call) => call.options.includeBuiltIns === true), true);
+});
+
+test('Gmail relevance routing distinguishes optional offers from financial obligations and preserves safeguards', async (t) => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'threadmark-relevance-v2-'));
+  const calls = [];
+  const notifications = [];
+  const jev = {
+    status: () => ({ enabled: true, model: 'jev-test', threshold: 0.78 }),
+    async evaluate(text, monitors, options) {
+      calls.push({ text, options });
+      if (text.startsWith('Unavailable')) return { available: false, scores: {}, detections: [] };
+      const unknown = text.startsWith('Missing');
+      const genuine = text.startsWith('Genuine');
+      const coupon = text.includes('Coupon');
+      return {
+        ...this.status(), available: true,
+        scores: unknown ? {} : { payment: genuine ? 0.95 : 0.04 },
+        signals: { promotional: coupon ? 0.98 : 0.88, personalObligation: coupon ? 0.4 : 0.05, transactional: coupon ? 0.35 : 0.05, recipientSpecific: coupon ? 0.55 : 0.04 },
+        dateEvaluated: true, date: null,
+        detections: monitors.length ? [{
+          type: 'reminder', key: 'custom-monitor', title: 'Synthetic custom monitor', confidence: 0.94,
+          amountMinor: null, currency: null, eventAt: null, details: { detector: 'jev', monitorId: monitors[0].id },
+        }] : options.includeBuiltIns ? [{
+          type: 'reminder', key: 'jev-reminder', title: 'Action or deadline mentioned', confidence: 0.88,
+          amountMinor: null, currency: null, eventAt: '2027-04-03T09:00:00.000Z', details: { detector: 'jev' },
+        }] : [],
+      };
+    },
+  };
+  const app = createThreadmarkServer({
+    config: { dataDir, webDir: path.join(root, 'app/web'), adminToken: '5'.repeat(64), bridgeToken: '6'.repeat(64), publicBaseUrl: 'https://threadmark.test', cookieSecure: false },
+    push: { enabled: true, publicKey: 'test', notifyItem: async (item) => { notifications.push(item.id); } }, jev,
+  });
+  const inbox = { id: 'gmail:label:INBOX', name: 'Inbox', kind: 'gmail_label' };
+  const group = { id: '120363000000000333@g.us', name: 'Synthetic group', kind: 'group' };
+  app.store.upsertGmailSources([inbox]); app.store.selectGmailSource(inbox.id, true);
+  app.store.upsertGroups([group]); app.store.selectGroup(group.id, true);
+  await new Promise((resolve) => app.server.listen(0, '127.0.0.1', resolve));
+  t.after(async () => { await app.close(); fs.rmSync(dataDir, { recursive: true, force: true }); });
+  const base = `http://127.0.0.1:${app.server.address().port}`;
+  let sequence = 0;
+  const send = (text, source = inbox) => fetch(`${base}/internal/events`, {
+    method: 'POST', headers: { 'x-bridge-token': '6'.repeat(64), 'content-type': 'application/json' },
+    body: JSON.stringify({ id: `synthetic-relevance-${++sequence}`, sourceId: source.id, sourceName: source.name, sourceKind: source.kind,
+      senderId: 'synthetic-sender', senderName: 'Synthetic sender', sentAt: new Date().toISOString(), text }),
+  }).then((response) => response.json());
+
+  const coupon = await send('Coupon: 37 RON voucher in your cont. Payment terms apply. Expires on 17.11.2026.');
+  assert.equal(coupon.items[0].details.attentionTriage.disposition, 'promotional');
+  assert.equal(coupon.items[0].details.paymentVerification.probability, 0.04);
+  assert.equal(coupon.items[0].details.safetyAlerts, undefined);
+  assert.equal(coupon.items[0].eventAt, null);
+  assert.equal(coupon.items[0].notify, false);
+  assert.equal(calls[0].options.verifyPayment, true);
+  assert.equal(calls[0].options.includeBuiltIns, false);
+  const advice = await send('Generic advice: try working differently tomorrow. Performance rises 3.4 times.');
+  assert.equal(advice.items[0].details.attentionTriage.disposition, 'promotional');
+  assert.equal(advice.items[0].eventAt, null);
+  assert.equal(advice.items[0].notify, false);
+  assert.deepEqual(notifications, []);
+  assert.equal(app.store.summary().open, 0);
+  assert.equal(app.store.summary().promotional, 2);
+  assert.equal(app.store.dueNotifications().length, 0);
+  const restored = app.store.setItemFeedback(coupon.items[0].id, { feedback: 'useful' });
+  assert.equal(restored.details.attentionTriage.disposition, 'inbox');
+
+  for (const text of [
+    'Genuine payment: 31 RON.',
+    'Your invoice is ready. Amount: 31 RON.',
+    'Your subscription has renewed. Total: 31 RON.',
+    'Please pay 31 RON by tomorrow.',
+    'Payment: 31 RON to RO00TEST0000000000000000.',
+    'Unavailable payment: 31 RON.',
+    'Missing payment: 31 RON.',
+  ]) {
+    const result = await send(text);
+    const payment = result.items.find((item) => item.type === 'payment');
+    assert.ok(payment, text);
+    assert.equal(payment.details.attentionTriage?.disposition, undefined, text);
+    assert.equal(payment.notify, true, text);
+  }
+  const shadow = await send('Coupon: 37 RON voucher. Payment terms apply.', group);
+  assert.equal(shadow.items[0].details.attentionTriage.mode, 'shadow');
+  assert.equal(shadow.items[0].details.attentionTriage.disposition, undefined);
+  app.store.createRule({ name: 'Synthetic coupon phrase', terms: ['Coupon'], category: 'payment', scope: 'all', notify: true });
+  const phrase = await send('Coupon: 37 RON voucher. Payment terms apply.');
+  const customPayment = phrase.items.find((item) => item.details.ruleId);
+  assert.equal(customPayment.details.attentionTriage.disposition, undefined);
+  assert.equal(customPayment.notify, true);
+  app.store.createRule({ name: 'Synthetic monitor', kind: 'semantic', condition: 'A synthetic offer I explicitly want to monitor.', category: 'reminder', threshold: 0.8, scope: 'all', notify: true });
+  const semantic = await send('Generic advice: try an optional offer tomorrow.');
+  const customReminder = semantic.items.find((item) => item.details.monitorId);
+  assert.equal(customReminder.details.attentionTriage.disposition, undefined);
+  assert.equal(customReminder.notify, true);
 });
 
 test('individual contacts are discovered but ignored until explicitly selected', async (t) => {

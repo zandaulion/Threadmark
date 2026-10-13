@@ -81,7 +81,9 @@ Open **Actions** on a card to:
 
 Feedback is stored locally for audit and does not currently retrain the detectors automatically. A “not relevant” item is also marked done.
 
-When Jev is enabled, new alert candidates store promotional-purpose, personal-obligation, transactional/administrative and recipient-specific probabilities. A narrow Gmail policy moves only very high-confidence promotional, low-obligation candidates to the **Promotional** status view. They do not notify or count as open Inbox items, but are not deleted. Select **Move to inbox** if Jev was wrong, or **Not relevant** to resolve the item. Payments/invoices, your phrase rules, your semantic monitors and photo-review alerts stay in Inbox; WhatsApp is not automatically filtered. The policy applies only to newly received messages.
+When Jev is enabled, new alert candidates store promotional-purpose, personal-obligation, transactional/administrative and recipient-specific probabilities. A narrow Gmail policy moves strongly promotional, low-relevance candidates to the **Promotional** status view. Generic payment matches can also move there when Jev confidently identifies an optional offer rather than a real financial matter. These items do not notify, carry an actionable due date or count as open Inbox items, but are not deleted. Select **Move to inbox** if Jev was wrong, or **Not relevant** to resolve the item. Invoices, subscription events, explicit payment requests, bank instructions, your phrase rules, your semantic monitors and photo-review alerts stay protected; WhatsApp is not automatically filtered. The policy applies only to newly received messages.
+
+Payment warnings compare the same sender's previous payments, rather than unrelated mail in the same Gmail label. Alerts marked **Not relevant** and items in **Promotional** are excluded from those comparisons. Deadline detection distinguishes actual tasks from story dates, advice and offer expiry dates; percentages and performance multipliers are not calendar dates.
 
 ## Notifications and daily digest
 
