@@ -1,4 +1,4 @@
-export function normalizeMessage(message, groupName = '', resolvedContactId = '') {
+export function normalizeMessage(message, groupName = '', resolvedContactId = '', selfIds = []) {
   const originalSourceId = message?.key?.remoteJid;
   const sourceId = originalSourceId?.endsWith('@g.us')
     ? originalSourceId
@@ -25,7 +25,23 @@ export function normalizeMessage(message, groupName = '', resolvedContactId = ''
     text: text || `[${media.kind === 'audio' ? 'Voice note' : 'Attachment'}]`,
     direction: message.key.fromMe ? 'outgoing' : 'incoming',
     media,
+    ...(sourceKind === 'group' && !message.key.fromMe ? addressing(content, selfIds) : {}),
   };
+}
+
+// Reports whether a group message mentions the user or quotes one of the
+// user's messages. Omitted when the user's own IDs are not known yet.
+function addressing(content, selfIds) {
+  const own = new Set((Array.isArray(selfIds) ? selfIds : []).map(jidUser).filter(Boolean));
+  if (!own.size) return {};
+  const contextInfo = Object.values(content || {}).find((value) => value?.contextInfo)?.contextInfo || {};
+  const mentioned = Array.isArray(contextInfo.mentionedJid) ? contextInfo.mentionedJid : [];
+  const quotedAuthor = contextInfo.quotedMessage ? contextInfo.participant : null;
+  return { addressedToMe: [...mentioned, quotedAuthor].some((jid) => own.has(jidUser(jid))) };
+}
+
+function jidUser(jid) {
+  return String(jid || '').split('@')[0].split(':')[0];
 }
 
 function mediaMetadata(content) {

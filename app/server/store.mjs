@@ -369,6 +369,10 @@ export class ThreadmarkStore {
     return [...detectAttention(message), ...evaluateRules(message, source, this.listRules({ enabledOnly: true, profileId: profileFromMessage(message) }))];
   }
 
+  participantCount(groupId) {
+    return Number(this.db.prepare("SELECT participant_count FROM groups WHERE id=? AND kind='group'").get(groupId)?.participant_count) || 0;
+  }
+
   isSelectedMessage(message) {
     const source = sourceFromMessage(message);
     if (!source) return { selected: false, source: null };

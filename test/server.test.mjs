@@ -118,9 +118,11 @@ test('invite, group selection, bridge ingestion and resolution work together', a
   assert.equal(eventResponse.status, 200);
   const event = await eventResponse.json();
   assert.equal(event.items.length, 1);
-  assert.equal(jevCalls, 1, 'local detections are semantically scored in shadow mode');
+  assert.equal(jevCalls, 1, 'local detections are semantically scored');
+  // A locally detected WhatsApp payment stays in the inbox however promotional it scores.
   assert.deepEqual(event.items[0].details.attentionTriage, {
-    mode: 'shadow', promotional: 0.96, personalObligation: 0.08, transactional: 0.11, recipientSpecific: 0.12, model: 'jev-test',
+    mode: 'active', promotional: 0.96, personalObligation: 0.08, transactional: 0.11, recipientSpecific: 0.12, model: 'jev-test',
+    policy: 'whatsapp-promo-v1',
   });
 
   const feed = await fetch(`${base}/api/feed`, { headers: { cookie } }).then((response) => response.json());
@@ -256,8 +258,8 @@ test('concrete invoices are detected locally for WhatsApp and Gmail', async (t) 
     assert.equal(result.items[0].detectionSource, 'rule');
   }
   assert.deepEqual(whatsapp.items[0].details.attentionTriage, {
-    mode: 'shadow', promotional: 0.04, personalObligation: 0.91, transactional: 0.96,
-    recipientSpecific: 0.98, model: 'jev-test',
+    mode: 'active', promotional: 0.04, personalObligation: 0.91, transactional: 0.96,
+    recipientSpecific: 0.98, model: 'jev-test', policy: 'whatsapp-promo-v1',
   });
   assert.deepEqual(gmail.items[0].details.attentionTriage, {
     mode: 'active', promotional: 0.04, personalObligation: 0.91, transactional: 0.96,
@@ -507,9 +509,9 @@ test('Gmail relevance routing distinguishes optional offers from financial oblig
     assert.equal(payment.details.attentionTriage?.disposition, undefined, text);
     assert.equal(payment.notify, true, text);
   }
-  const shadow = await send('Coupon: 37 RON voucher. Payment terms apply.', group);
-  assert.equal(shadow.items[0].details.attentionTriage.mode, 'shadow');
-  assert.equal(shadow.items[0].details.attentionTriage.disposition, undefined);
+  const groupCoupon = await send('Coupon: 37 RON voucher. Payment terms apply.', group);
+  assert.equal(groupCoupon.items[0].details.attentionTriage.policy, 'whatsapp-promo-v1');
+  assert.equal(groupCoupon.items[0].details.attentionTriage.disposition, undefined, 'local WhatsApp payments stay in the inbox');
   app.store.createRule({ name: 'Synthetic coupon phrase', terms: ['Coupon'], category: 'payment', scope: 'all', notify: true });
   const phrase = await send('Coupon: 37 RON voucher. Payment terms apply.');
   const customPayment = phrase.items.find((item) => item.details.ruleId);

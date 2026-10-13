@@ -28,6 +28,12 @@ const BUST_CONTENT_SECURITY_POLICY = "default-src 'none'; script-src 'unsafe-inl
 const GMAIL_PROMOTIONAL_POLICY = 'gmail-promo-v2';
 const GMAIL_PROMOTIONAL_THRESHOLD = 0.95;
 const GMAIL_PERSONAL_OBLIGATION_CEILING = 0.30;
+// WhatsApp chats carry real requests between people, so only near-certain
+// promotions with almost no personal obligation leave the inbox there.
+const SMALL_GROUP_MAX_PARTICIPANTS = 5;
+const WHATSAPP_PROMOTIONAL_POLICY = 'whatsapp-promo-v1';
+const WHATSAPP_PROMOTIONAL_THRESHOLD = 0.95;
+const WHATSAPP_PERSONAL_OBLIGATION_CEILING = 0.15;
 
 export function createThreadmarkServer(options = {}) {
   const config = loadConfig(options.config);
@@ -171,7 +177,12 @@ export function createThreadmarkServer(options = {}) {
               details: { ...(detection.details || {}), dateEvaluated: true, dueAtSource: analysis.date?.source || null },
             }));
           }
-          if (analysis.signals?.replyNeeded >= 0.82 && !detections.some((item) => item.type === 'reminder')) {
+          // In a larger group most questions are for someone else, so a reply is
+          // requested only when the message mentions the user or quotes the
+          // user's message. Small groups behave like private chats.
+          const participants = selection.source.kind === 'group' ? store.participantCount(selection.source.id) : 0;
+          const replyIsForUser = participants <= SMALL_GROUP_MAX_PARTICIPANTS || body.addressedToMe !== false;
+          if (replyIsForUser && analysis.signals?.replyNeeded >= 0.82 && !detections.some((item) => item.type === 'reminder')) {
             const dueAt = new Date(new Date(body.sentAt || Date.now()).valueOf() + settings.replyDelayHours * 3_600_000).toISOString();
             detections.push({
               type: 'reminder', key: 'jev-reply-needed', title: 'Reply requested', confidence: analysis.signals.replyNeeded,
@@ -613,13 +624,13 @@ function applyAttentionTriage(detections, analysis, source) {
     .every((value) => typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1)) return detections;
   const gmailSource = isGmailSource(source);
   const attentionTriage = {
-    mode: gmailSource ? 'active' : 'shadow',
+    mode: 'active',
     promotional,
     personalObligation,
     transactional,
     recipientSpecific,
     model: analysis.model || null,
-    ...(gmailSource ? { policy: GMAIL_PROMOTIONAL_POLICY } : {}),
+    policy: gmailSource ? GMAIL_PROMOTIONAL_POLICY : WHATSAPP_PROMOTIONAL_POLICY,
   };
   return detections.map((detection) => {
     const details = { ...(detection.details || {}), attentionTriage: { ...attentionTriage } };
@@ -635,11 +646,19 @@ function applyAttentionTriage(detections, analysis, source) {
       || details.ruleId || details.monitorId || details.needsReview;
     const lowRelevancePromotion = promotional >= 0.85 && personalObligation <= 0.15
       && transactional <= 0.15 && recipientSpecific <= 0.15;
-    const promotionalDisposition = gmailSource && !protectedDetection && (
-      (promotional >= GMAIL_PROMOTIONAL_THRESHOLD && personalObligation <= GMAIL_PERSONAL_OBLIGATION_CEILING)
-      || lowRelevancePromotion
-      || (rejectedPayment && promotional >= 0.85)
-    );
+    // A payment found only by Jev, with no amount request, IBAN or invoice
+    // evidence, is how a priced event invitation in a group usually arrives.
+    const jevOnlyPayment = genericPayment && details.detector === 'jev';
+    const whatsappProtected = (detection.type === 'payment' && !jevOnlyPayment)
+      || details.ruleId || details.monitorId || details.needsReview;
+    const promotionalDisposition = gmailSource
+      ? !protectedDetection && (
+        (promotional >= GMAIL_PROMOTIONAL_THRESHOLD && personalObligation <= GMAIL_PERSONAL_OBLIGATION_CEILING)
+        || lowRelevancePromotion
+        || (rejectedPayment && promotional >= 0.85)
+      )
+      : !whatsappProtected && promotional >= WHATSAPP_PROMOTIONAL_THRESHOLD
+        && personalObligation <= WHATSAPP_PERSONAL_OBLIGATION_CEILING;
     if (!promotionalDisposition) return { ...detection, details };
     details.attentionTriage.disposition = 'promotional';
     return { ...detection, eventAt: null, notify: false, details: { ...details, dateEvaluated: true, dueAtSource: null } };
