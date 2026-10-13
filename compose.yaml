@@ -5,10 +5,11 @@ services:
       dockerfile: deploy/Containerfile.app
     image: localhost/threadmark-app:latest
     container_name: threadmark-app
-    env_file: ${THREADMARK_ENV_FILE:-./deploy/threadmark.env}
+    env_file: ${THREADMARK_CONFIG_DIR:-./deploy}/app.env
     environment:
       HOST: 0.0.0.0
       PORT: 4391
+      INTERNAL_PORT: 4390
       DATA_DIR: /data
       BRIDGE_CONTROL_URL: http://bridge:4392
       GMAIL_CONTROL_URL: http://gmail:4393
@@ -27,12 +28,12 @@ services:
       dockerfile: deploy/Containerfile.bridge
     image: localhost/threadmark-bridge:latest
     container_name: threadmark-bridge
-    env_file: ${THREADMARK_ENV_FILE:-./deploy/threadmark.env}
+    env_file: ${THREADMARK_CONFIG_DIR:-./deploy}/bridge.env
     environment:
       HOST: 0.0.0.0
       PORT: 4392
       DATA_DIR: /data
-      APP_INTERNAL_URL: http://app:4391
+      APP_INTERNAL_URL: http://app:4390
     volumes:
       - ${THREADMARK_DATA_DIR:-./data}/bridge:/data:Z
     networks: [threadmark]
@@ -46,12 +47,12 @@ services:
       dockerfile: deploy/Containerfile.gmail
     image: localhost/threadmark-gmail:latest
     container_name: threadmark-gmail-dev
-    env_file: ${THREADMARK_ENV_FILE:-./deploy/threadmark.env}
+    env_file: ${THREADMARK_CONFIG_DIR:-./deploy}/gmail.env
     environment:
       HOST: 0.0.0.0
       PORT: 4393
       DATA_DIR: /data
-      APP_INTERNAL_URL: http://app:4391
+      APP_INTERNAL_URL: http://app:4390
       GMAIL_PROFILE_ID: dev
     volumes:
       - ${THREADMARK_DATA_DIR:-./data}/gmail-dev:/data:Z
@@ -66,12 +67,12 @@ services:
       dockerfile: deploy/Containerfile.gmail
     image: localhost/threadmark-gmail:latest
     container_name: threadmark-gmail
-    env_file: ${THREADMARK_ENV_FILE:-./deploy/threadmark.env}
+    env_file: ${THREADMARK_CONFIG_DIR:-./deploy}/gmail.env
     environment:
       HOST: 0.0.0.0
       PORT: 4393
       DATA_DIR: /data
-      APP_INTERNAL_URL: http://app:4391
+      APP_INTERNAL_URL: http://app:4390
       GMAIL_PROFILE_ID: personal
     volumes:
       - ${THREADMARK_DATA_DIR:-./data}/gmail:/data:Z

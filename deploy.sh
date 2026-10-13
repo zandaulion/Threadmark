@@ -3,15 +3,23 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_ROOT="${XDG_CONFIG_HOME:-${HOME}/.config}"
-ENV_FILE="${THREADMARK_ENV_FILE:-${CONFIG_ROOT}/threadmark/server.env}"
+CONFIG_DIR="${THREADMARK_CONFIG_DIR:-${CONFIG_ROOT}/threadmark}"
 QUADLET_DIR="${CONFIG_ROOT}/containers/systemd"
 
 for executable in node npm podman systemctl curl install; do
   command -v "$executable" >/dev/null || { echo "required executable not found: ${executable}" >&2; exit 1; }
 done
-[[ -f "$ENV_FILE" ]] || { echo "Missing ${ENV_FILE}. Run: node scripts/create-env.mjs https://your-threadmark-origin" >&2; exit 2; }
-grep -Eq '^ADMIN_TOKEN=[a-f0-9]{64}$' "$ENV_FILE" || { echo "ADMIN_TOKEN is missing or malformed." >&2; exit 2; }
-grep -Eq '^BRIDGE_TOKEN=[a-f0-9]{64}$' "$ENV_FILE" || { echo "BRIDGE_TOKEN is missing or malformed." >&2; exit 2; }
+# Older deployments shared one server.env across every container.
+if [[ ! -f "$CONFIG_DIR/app.env" && -f "$CONFIG_DIR/server.env" ]]; then
+  THREADMARK_CONFIG_DIR="$CONFIG_DIR" node "$ROOT/scripts/split-env.mjs"
+fi
+for file in app.env bridge.env gmail.env; do
+  [[ -f "$CONFIG_DIR/$file" ]] || { echo "Missing ${CONFIG_DIR}/${file}. Run: node scripts/create-env.mjs https://your-threadmark-origin" >&2; exit 2; }
+done
+grep -Eq '^ADMIN_TOKEN=[a-f0-9]{64}$' "$CONFIG_DIR/app.env" || { echo "ADMIN_TOKEN is missing or malformed." >&2; exit 2; }
+BRIDGE_TOKENS="$(grep -hE '^BRIDGE_TOKEN=[a-f0-9]{64}$' "$CONFIG_DIR/app.env" "$CONFIG_DIR/bridge.env" "$CONFIG_DIR/gmail.env")"
+[[ "$(wc -l <<<"$BRIDGE_TOKENS")" == 3 && "$(sort -u <<<"$BRIDGE_TOKENS" | wc -l)" == 1 ]] \
+  || { echo "BRIDGE_TOKEN is missing, malformed or differs between the environment files." >&2; exit 2; }
 
 npm --prefix "$ROOT/app" ci --ignore-scripts
 npm --prefix "$ROOT/bridge" ci --ignore-scripts

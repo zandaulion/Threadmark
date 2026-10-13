@@ -19,6 +19,12 @@ const CONTENT_TYPES = {
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
 };
+// Message text is rendered into these pages, so scripts and connections are
+// pinned to this origin: a rendering slip cannot load or send anything elsewhere.
+const CONTENT_SECURITY_POLICY = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; "
+  + "connect-src 'self'; manifest-src 'self'; worker-src 'self'; font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
+// The cache-busting page has inline code but renders no data.
+const BUST_CONTENT_SECURITY_POLICY = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 const GMAIL_PROMOTIONAL_POLICY = 'gmail-promo-v2';
 const GMAIL_PROMOTIONAL_THRESHOLD = 0.95;
 const GMAIL_PERSONAL_OBLIGATION_CEILING = 0.30;
@@ -43,10 +49,12 @@ export function createThreadmarkServer(options = {}) {
     for (const response of streams) response.write(frame);
   };
 
-  const server = http.createServer(async (req, res) => {
+  const splitInternal = Boolean(config.internalPort);
+  const handler = (scope) => async (req, res) => {
     const url = new URL(req.url, 'http://local.invalid');
     const pathname = url.pathname;
     try {
+      if (splitInternal && (scope === 'internal') !== pathname.startsWith('/internal/')) return json(res, 404, { error: 'not_found' });
       if (req.method !== 'GET' && req.method !== 'HEAD' && !sameOrigin(req)) return json(res, 403, { error: 'wrong_origin' });
       if (pathname === '/api/health' && req.method === 'GET') return json(res, 200, { status: 'ok', bridge: store.bridgeStatus() });
 
@@ -394,13 +402,18 @@ export function createThreadmarkServer(options = {}) {
         return json(res, 404, { error: 'not_found' });
       }
 
-      if (serveStatic(req, res, pathname, config.webDir, webHash)) return;
+      if (serveStatic(req, res, pathname, config, webHash)) return;
       return json(res, 404, { error: 'not_found' });
     } catch (error) {
       console.error(error);
-      return json(res, error?.status || 500, { error: error?.status ? 'invalid_request' : 'server_error', message: error?.message || 'Unexpected error' });
+      // Only errors raised deliberately for bad requests carry a client-safe message.
+      return json(res, error?.status || 500, error?.status
+        ? { error: 'invalid_request', message: error.message }
+        : { error: 'server_error' });
     }
-  });
+  };
+  const server = http.createServer(handler('public'));
+  const internalServer = splitInternal ? http.createServer(handler('internal')) : null;
 
   const scheduler = setInterval(() => {
     for (const item of store.dueNotifications()) void notifyAndMark(item);
@@ -412,12 +425,16 @@ export function createThreadmarkServer(options = {}) {
   }, 60_000);
   scheduler.unref();
 
-  const close = () => new Promise((resolve, reject) => server.close((error) => {
+  const closeServer = (instance) => new Promise((resolve, reject) => {
+    if (!instance?.listening) return resolve();
+    instance.close((error) => (error ? reject(error) : resolve()));
+  });
+  const close = async () => {
     clearInterval(scheduler);
+    await Promise.all([closeServer(server), closeServer(internalServer)]);
     if (ownsDb) db.close();
-    if (error) reject(error); else resolve();
-  }));
-  return { server, db, store, auth, jev, close, config };
+  };
+  return { server, internalServer, db, store, auth, jev, close, config };
 }
 
 function calendar(res, item) {
@@ -502,7 +519,8 @@ async function proxyAsset(res, target, token, contentType) {
   }
 }
 
-function serveStatic(req, res, pathname, webDir, webHash) {
+function serveStatic(req, res, pathname, config, webHash) {
+  const { webDir } = config;
   if (!['GET', 'HEAD'].includes(req.method)) return false;
   const publicPages = new Map([
     ['/about', '/about.html'],
@@ -523,6 +541,12 @@ function serveStatic(req, res, pathname, webDir, webHash) {
     'content-type': contentType,
     'cache-control': noStore ? 'no-cache, no-store, must-revalidate' : 'no-cache, must-revalidate',
     'x-content-type-options': 'nosniff',
+    'referrer-policy': 'no-referrer',
+    ...(contentType.startsWith('text/html') ? {
+      'content-security-policy': decoded === '/bust.html' ? BUST_CONTENT_SECURITY_POLICY : CONTENT_SECURITY_POLICY,
+      'x-frame-options': 'DENY',
+    } : {}),
+    ...(config.cookieSecure ? { 'strict-transport-security': 'max-age=31536000' } : {}),
     ...(isWorker ? { 'service-worker-allowed': '/' } : {}),
     ...(decoded === '/bust.html' ? { 'clear-site-data': '"cache"' } : {}),
   });

@@ -8,7 +8,7 @@ The deployment also serves a concise public policy for OAuth users at `/privacy`
 
 Groups and contacts are disabled until selected. For a new incoming message:
 
-1. the relevant local connector receives and normalizes the event;
+1. the relevant local connector receives and normalizes the event; the WhatsApp bridge removes the text and media of messages from unselected chats before queuing them, so only source metadata leaves it;
 2. the local app checks its source against the allowlist;
 3. unselected content is rejected before detection and long-term storage;
 4. selected content runs through local detectors and phrase rules;
@@ -77,10 +77,10 @@ Connector credentials, source metadata, rules, settings, active browser devices 
 
 - `ADMIN_TOKEN` grants invitation and device administration. It belongs only in the private console route and protected environment file.
 - `BRIDGE_TOKEN` authenticates all internal source/event and bridge-control traffic.
-- `GOOGLE_CLIENT_SECRET` and `GMAIL_TOKEN_ENCRYPTION_KEY` remain in the protected server environment file.
+- `GOOGLE_CLIENT_SECRET` and `GMAIL_TOKEN_ENCRYPTION_KEY` live only in the Gmail connectors' environment file.
 - Gmail refresh tokens are encrypted at rest in separate profile volumes. Possession of either Gmail volume plus the encryption key grants read-only access to that mailbox until revoked.
 - WhatsApp auth state in the bridge volume can act as the linked account and must be treated as a high-value credential.
-- TypeSafe and VAPID private keys belong only in the server environment file.
+- TypeSafe and VAPID private keys live only in the app's environment file. The WhatsApp bridge, which parses untrusted media, receives no secret except `BRIDGE_TOKEN`.
 - Browser device tokens are random, stored in an HttpOnly SameSite cookie and represented only by hashes in SQLite.
 - Invitations are single-use, expire and can be revoked.
 
@@ -90,8 +90,10 @@ Use an environment file with mode `0600`, encrypted backups and a private HTTPS 
 
 The supported production posture is:
 
-- app bound to `127.0.0.1:4391`;
+- app bound to `127.0.0.1:4391`, serving only browser routes;
+- connector endpoints (`/internal/*`) served only on the unpublished internal port 4390;
 - connectors not published to the host;
+- pages served with a same-origin Content-Security-Policy, `frame-ancestors 'none'` and HSTS;
 - private HTTPS access through Tailscale or an equivalently restricted proxy;
 - public route never carrying the admin token;
 - containers running rootless, without Linux capabilities and with `no-new-privileges`.
@@ -100,7 +102,7 @@ Do not expose connector control endpoints or the unauthenticated HTTP app port t
 
 ## Logging and cache behavior
 
-The application is designed not to print message content. Errors use general codes and service information. Avoid enabling verbose dependency/protocol logging in production unless you have reviewed what it emits.
+The application is designed not to print message content. Errors use general codes and service information; unexpected errors are not described to the browser. The bridge suppresses libsignal's session-record dumps, which include private ratchet keys. Avoid enabling verbose dependency/protocol logging in production unless you have reviewed what it emits.
 
 API and internal responses use `Cache-Control: no-store` and are excluded from service-worker caching. The service worker caches only static application assets. Browser notification surfaces, OS notification history and reverse-proxy logs are separate systems that require their own privacy configuration.
 

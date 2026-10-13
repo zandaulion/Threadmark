@@ -9,6 +9,12 @@ import { Outbox } from './outbox.mjs';
 import { normalizeContacts, normalizeGroups, normalizeMessage, resolveContactSourceId } from './normalize.mjs';
 import { processMessageMedia } from './media.mjs';
 
+// libsignal prints whole session records, private ratchet keys included, through
+// console.info/warn. Keep its one-line notices and drop the objects.
+const warn = console.warn.bind(console);
+console.info = () => {};
+console.warn = (first) => { if (typeof first === 'string') warn(first); };
+
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dataDir = process.env.DATA_DIR || path.join(here, 'data');
 const authDir = path.join(dataDir, 'auth');
@@ -28,7 +34,8 @@ let reconnectTimer = null;
 let delivering = false;
 const groupNames = new Map();
 const lidToPhone = new Map();
-let routing = { sourceIds: new Set(), outgoingMonitoring: false, attachmentProcessing: false };
+let routing = { loaded: false, sourceIds: new Set(), outgoingMonitoring: false, attachmentProcessing: false };
+let routingRefreshedAt = 0;
 
 async function connect() {
   clearTimeout(reconnectTimer);
@@ -108,6 +115,13 @@ async function connect() {
       const normalized = normalizeMessage(message, groupNames.get(originalSourceId), resolvedSourceId);
       if (!normalized) continue;
       if (normalized.direction === 'outgoing' && (!routing.outgoingMonitoring || !routing.sourceIds.has(normalized.sourceId))) continue;
+      // A source enabled in the last few seconds may not be in the cached routing yet.
+      if (routing.loaded && !routing.sourceIds.has(normalized.sourceId) && Date.now() - routingRefreshedAt > 3000) await refreshRouting();
+      if (routing.loaded && !routing.sourceIds.has(normalized.sourceId)) {
+        // Unselected chats are only discovered: their content never reaches the outbox.
+        normalized.text = '';
+        normalized.media = null;
+      }
       if (normalized.direction === 'incoming' && routing.attachmentProcessing && routing.sourceIds.has(normalized.sourceId) && normalized.media) {
         const processed = await processMessageMedia(message, socket, logger, { tempDir: dataDir });
         if (processed) {
@@ -135,7 +149,9 @@ async function refreshRouting() {
     });
     if (!response.ok) return;
     const payload = await response.json();
+    routingRefreshedAt = Date.now();
     routing = {
+      loaded: true,
       sourceIds: new Set(Array.isArray(payload.sourceIds) ? payload.sourceIds : []),
       outgoingMonitoring: Boolean(payload.outgoingMonitoring),
       attachmentProcessing: Boolean(payload.attachmentProcessing),
@@ -204,7 +220,8 @@ const control = http.createServer(async (req, res) => {
       const code = await socket.requestPairingCode(phoneNumber);
       return sendJson(res, 200, { code });
     } catch (error) {
-      return sendJson(res, 503, { error: 'pairing_failed', message: error.message });
+      console.error(`Pairing failed: ${error.message}`);
+      return sendJson(res, 503, { error: 'pairing_failed' });
     }
   }
   if (url.pathname === '/contact-lookup' && req.method === 'POST') {
@@ -221,7 +238,8 @@ const control = http.createServer(async (req, res) => {
       queueContacts([contact]);
       return sendJson(res, 200, { contact });
     } catch (error) {
-      return sendJson(res, 503, { error: 'contact_lookup_failed', message: error.message });
+      console.error(`Contact lookup failed: ${error.message}`);
+      return sendJson(res, 503, { error: 'contact_lookup_failed' });
     }
   }
   if (url.pathname === '/contacts-lookup' && req.method === 'POST') {
@@ -236,7 +254,8 @@ const control = http.createServer(async (req, res) => {
       queueContacts(contacts);
       return sendJson(res, 200, { contacts });
     } catch (error) {
-      return sendJson(res, 503, { error: 'contact_lookup_failed', message: error.message });
+      console.error(`Contact lookup failed: ${error.message}`);
+      return sendJson(res, 503, { error: 'contact_lookup_failed' });
     }
   }
   return sendJson(res, 404, { error: 'not_found' });

@@ -88,18 +88,18 @@ npm run screenshots
 
 The command starts a temporary local server, uses an in-process fake Jev adapter, writes the images and manifest under `docs/images/portfolio/`, then deletes the temporary database.
 
-Create a temporary environment file outside Git:
+Create temporary per-container environment files outside Git (`deploy/*.env` is ignored):
 
 ```bash
-THREADMARK_ENV_FILE="$PWD/deploy/threadmark.env" \
+THREADMARK_CONFIG_DIR="$PWD/deploy" \
   node scripts/create-env.mjs https://threadmark.example
 ```
 
-For a non-HTTPS localhost trial only, change `COOKIE_SECURE=0` in that temporary file. Then either run both processes directly or use Podman:
+For a non-HTTPS localhost trial only, change `COOKIE_SECURE=0` in `deploy/app.env`. Then either run both processes directly or use Podman:
 
 ```bash
 set -a
-. deploy/threadmark.env
+. deploy/app.env
 set +a
 DATA_DIR="$PWD/data/app" HOST=127.0.0.1 node app/server/index.mjs
 ```
@@ -108,7 +108,7 @@ In another terminal:
 
 ```bash
 set -a
-. deploy/threadmark.env
+. deploy/bridge.env
 set +a
 DATA_DIR="$PWD/data/bridge" HOST=127.0.0.1 node bridge/index.mjs
 ```
@@ -117,7 +117,7 @@ Start the optional Personal Gmail connector in a third terminal after configurin
 
 ```bash
 set -a
-. deploy/threadmark.env
+. deploy/gmail.env
 set +a
 DATA_DIR="$PWD/data/gmail" HOST=127.0.0.1 node gmail/index.mjs
 ```
@@ -160,18 +160,18 @@ Google OAuth apps left in External **Testing** mode issue refresh tokens that no
 
 ## Podman Compose
 
-After creating `deploy/threadmark.env`:
+After creating `deploy/app.env`, `deploy/bridge.env` and `deploy/gmail.env`:
 
 ```bash
 podman compose up --build -d
 curl -fsS http://127.0.0.1:4391/api/health
 ```
 
-Data lives under `./data` by default. Override `THREADMARK_DATA_DIR` and `THREADMARK_ENV_FILE` when needed.
+Data lives under `./data` by default. Override `THREADMARK_DATA_DIR` and `THREADMARK_CONFIG_DIR` when needed.
 
 ## Production with Quadlet
 
-Create the environment file in its production location:
+Create the environment files in their production location (`~/.config/threadmark/app.env`, `bridge.env` and `gmail.env`):
 
 ```bash
 node scripts/create-env.mjs https://your-threadmark-origin
@@ -214,7 +214,7 @@ Defaults:
 - route prefix: `/threadmark/api/*`
 - backend: `127.0.0.1:4391`
 
-Override the paths and insertion anchor with `THREADMARK_CADDYFILE`, `THREADMARK_CONSOLE_APPS`, `THREADMARK_CONSOLE_ANCHOR` and `THREADMARK_ENV_FILE`.
+Override the paths and insertion anchor with `THREADMARK_CADDYFILE`, `THREADMARK_CONSOLE_APPS`, `THREADMARK_CONSOLE_ANCHOR` and `THREADMARK_CONFIG_DIR`.
 
 The public/tailnet PWA route must never inject the admin token. Only the private invitation-console route should supply `X-Admin-Token`.
 

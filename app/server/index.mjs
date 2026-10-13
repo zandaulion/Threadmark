@@ -4,6 +4,9 @@ const app = createThreadmarkServer();
 app.server.listen(app.config.port, app.config.host, () => {
   console.log(`Threadmark listening on http://${app.config.host}:${app.config.port}`);
 });
+app.internalServer?.listen(app.config.internalPort, app.config.host, () => {
+  console.log(`Threadmark connector endpoint listening on http://${app.config.host}:${app.config.internalPort}`);
+});
 
 const shutdown = async () => {
   await app.close();

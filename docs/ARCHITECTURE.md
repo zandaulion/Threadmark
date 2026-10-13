@@ -13,7 +13,7 @@ Threadmark separates WhatsApp/Gmail access, attention detection and the browser 
 | `pwa-invite-console` | Private creation of invitations and device revocation through Threadmark's admin API | Managed by the external console |
 | TypeSafe AI / Jev | Optional typed semantic judgments and probabilities | External service; only invoked within the documented boundary |
 
-The default Podman deployment puts the app, WhatsApp bridge and two Gmail connector instances on one network. Connectors have no host ports. The app binds only to `127.0.0.1:4391`; a private HTTPS reverse proxy or tunnel provides browser access.
+The default Podman deployment puts the app, WhatsApp bridge and two Gmail connector instances on one network. Connectors have no host ports. The app binds only to `127.0.0.1:4391` for browsers; connectors reach `/internal/*` on port 4390, which is never published. A private HTTPS reverse proxy or tunnel provides browser access.
 
 ## Message flow
 

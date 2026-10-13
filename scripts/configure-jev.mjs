@@ -1,9 +1,9 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { configDir } from './env-layout.mjs';
 
-const destination = process.env.THREADMARK_ENV_FILE || path.join(os.homedir(), '.config/threadmark/server.env');
+const destination = path.join(configDir(), 'app.env');
 if (!fs.existsSync(destination)) {
   console.error(`Missing ${destination}. Deploy Threadmark first.`);
   process.exit(2);

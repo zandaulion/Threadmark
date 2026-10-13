@@ -8,11 +8,11 @@ Image=localhost/threadmark-bridge:latest
 ContainerName=threadmark-bridge
 Network=threadmark.network
 Volume=%h/.local/share/threadmark/bridge:/data:Z
-EnvironmentFile=%h/.config/threadmark/server.env
+EnvironmentFile=%h/.config/threadmark/bridge.env
 Environment=HOST=0.0.0.0
 Environment=PORT=4392
 Environment=DATA_DIR=/data
-Environment=APP_INTERNAL_URL=http://threadmark-app:4391
+Environment=APP_INTERNAL_URL=http://threadmark-app:4390
 NoNewPrivileges=true
 DropCapability=all
 

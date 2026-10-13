@@ -20,7 +20,7 @@ Internal bridge APIs require:
 X-Bridge-Token: <BRIDGE_TOKEN>
 ```
 
-Unauthorized admin/internal requests intentionally return `404` to avoid exposing those surfaces.
+Unauthorized admin/internal requests intentionally return `404` to avoid exposing those surfaces. When `INTERNAL_PORT` is set (the default in the container images), internal routes exist only on that port and the browser-facing port answers `404` for them.
 
 ## Health and browser authentication
 

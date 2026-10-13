@@ -11,6 +11,9 @@ export function loadConfig(overrides = {}) {
     dataDir: process.env.DATA_DIR || path.join(appDir, 'data'),
     host: process.env.HOST || '127.0.0.1',
     port: Number(process.env.PORT || 4391),
+    // When set, connector endpoints (/internal/*) listen only on this port,
+    // which is never published, and the browser-facing port refuses them.
+    internalPort: Number(process.env.INTERNAL_PORT || 0),
     publicBaseUrl: (process.env.PUBLIC_BASE_URL || '').replace(/\/+$/, ''),
     cookieSecure: process.env.COOKIE_SECURE !== '0',
     adminToken: process.env.ADMIN_TOKEN || '',

@@ -6,7 +6,7 @@ export class Outbox {
   constructor(dataDir) {
     fs.mkdirSync(dataDir, { recursive: true, mode: 0o700 });
     this.db = new DatabaseSync(path.join(dataDir, 'outbox.sqlite'));
-    this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;
+    this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; PRAGMA secure_delete=ON;
       CREATE TABLE IF NOT EXISTS outbox (
         id TEXT PRIMARY KEY,
         endpoint TEXT NOT NULL,

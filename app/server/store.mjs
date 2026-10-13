@@ -16,7 +16,8 @@ const PROFILE_DEFINITIONS = [
 export function openDatabase(dataDir) {
   fs.mkdirSync(dataDir, { recursive: true, mode: 0o700 });
   const db = new DatabaseSync(path.join(dataDir, 'threadmark.sqlite'));
-  db.exec('PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;');
+  // secure_delete overwrites deleted and pruned message text instead of leaving it in free pages.
+  db.exec('PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000; PRAGMA secure_delete=ON;');
   db.exec(`
     CREATE TABLE IF NOT EXISTS profiles (
       id TEXT PRIMARY KEY,

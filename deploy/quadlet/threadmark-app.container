@@ -9,9 +9,10 @@ ContainerName=threadmark-app
 Network=threadmark.network
 PublishPort=127.0.0.1:4391:4391
 Volume=%h/.local/share/threadmark/app:/data:Z
-EnvironmentFile=%h/.config/threadmark/server.env
+EnvironmentFile=%h/.config/threadmark/app.env
 Environment=HOST=0.0.0.0
 Environment=PORT=4391
+Environment=INTERNAL_PORT=4390
 Environment=DATA_DIR=/data
 Environment=BRIDGE_CONTROL_URL=http://threadmark-bridge:4392
 Environment=GMAIL_CONTROL_URL=http://threadmark-gmail:4393

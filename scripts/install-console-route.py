@@ -10,7 +10,7 @@ import subprocess
 CADDYFILE = Path(os.environ.get('THREADMARK_CADDYFILE', '/etc/caddy/Caddyfile'))
 APPS = Path(os.environ.get('THREADMARK_CONSOLE_APPS', '/var/www/pwa-invite-console/apps.json'))
 OWNER_HOME = Path(pwd.getpwnam(os.environ.get('SUDO_USER', pwd.getpwuid(os.getuid()).pw_name)).pw_dir)
-ENVFILE = Path(os.environ.get('THREADMARK_ENV_FILE', str(OWNER_HOME / '.config/threadmark/server.env')))
+ENVFILE = Path(os.environ.get('THREADMARK_CONFIG_DIR', str(OWNER_HOME / '.config/threadmark'))) / 'app.env'
 ANCHOR = os.environ.get('THREADMARK_CONSOLE_ANCHOR', '\t# The train API, tailnet-only.')
 MARKER = '# Threadmark invite console route.'
 

@@ -8,11 +8,11 @@ Image=localhost/threadmark-gmail:latest
 ContainerName=threadmark-gmail
 Network=threadmark.network
 Volume=%h/.local/share/threadmark/gmail:/data:Z
-EnvironmentFile=%h/.config/threadmark/server.env
+EnvironmentFile=%h/.config/threadmark/gmail.env
 Environment=HOST=0.0.0.0
 Environment=PORT=4393
 Environment=DATA_DIR=/data
-Environment=APP_INTERNAL_URL=http://threadmark-app:4391
+Environment=APP_INTERNAL_URL=http://threadmark-app:4390
 Environment=GMAIL_PROFILE_ID=personal
 NoNewPrivileges=true
 DropCapability=all

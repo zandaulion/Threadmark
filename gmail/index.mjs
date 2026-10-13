@@ -38,7 +38,9 @@ const server = http.createServer(async (req, res) => {
     return json(res, 404, { error: 'not_found' });
   } catch (error) {
     console.error(`Gmail control request failed: ${error.message}`);
-    return json(res, error.status || 500, { error: error.status ? 'gmail_oauth_failed' : 'server_error', message: error.message });
+    return json(res, error.status || 500, error.status
+      ? { error: 'gmail_oauth_failed', message: error.message }
+      : { error: 'server_error' });
   }
 });
 

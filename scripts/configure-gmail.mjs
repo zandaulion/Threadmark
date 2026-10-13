@@ -1,16 +1,17 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { configDir } from './env-layout.mjs';
 
-const filename = process.env.THREADMARK_ENV_FILE || path.join(os.homedir(), '.config/threadmark/server.env');
-if (!fs.existsSync(filename)) {
-  console.error(`Missing ${filename}. Create the Threadmark environment file first.`);
+const appFile = path.join(configDir(), 'app.env');
+const filename = path.join(configDir(), 'gmail.env');
+if (!fs.existsSync(appFile) || !fs.existsSync(filename)) {
+  console.error(`Missing ${appFile} or ${filename}. Create the Threadmark environment files first.`);
   process.exit(2);
 }
 const original = fs.readFileSync(filename, 'utf8');
-const publicBaseUrl = valueFor(original, 'PUBLIC_BASE_URL').replace(/\/+$/u, '');
+const publicBaseUrl = valueFor(fs.readFileSync(appFile, 'utf8'), 'PUBLIC_BASE_URL').replace(/\/+$/u, '');
 if (!publicBaseUrl.startsWith('https://')) {
   console.error('PUBLIC_BASE_URL must be an HTTPS origin before Gmail can be configured.');
   process.exit(2);

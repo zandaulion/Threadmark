@@ -15,13 +15,15 @@ The bridge image builds Tesseract, Poppler, FFmpeg and whisper.cpp support. The 
 
 ## Configuration
 
-Create a mode-`0600` environment file outside Git:
+Create mode-`0600` environment files outside Git:
 
 ```bash
 node scripts/create-env.mjs https://threadmark.example
 ```
 
-By default this writes `~/.config/threadmark/server.env` and refuses to overwrite an existing file. Set `THREADMARK_ENV_FILE` to choose another destination.
+By default this writes `app.env`, `bridge.env` and `gmail.env` to `~/.config/threadmark/` and refuses to overwrite existing files. Set `THREADMARK_CONFIG_DIR` to choose another directory. Each container receives only its own file: the WhatsApp bridge gets just `BRIDGE_TOKEN`, the Gmail connectors get the Google OAuth settings and token encryption key, and only the app gets the admin, VAPID and TypeSafe secrets. The split is defined in `scripts/env-layout.mjs`.
+
+Deployments created before this split used a single `server.env` for every container. `deploy.sh` migrates it automatically with `scripts/split-env.mjs`; delete `server.env` once the new deployment is verified.
 
 | Variable | Purpose | Default/source |
 | --- | --- | --- |
@@ -76,11 +78,11 @@ npm --prefix gmail ci
 npm test
 ```
 
-For localhost, create a temporary environment file in the repository and change `COOKIE_SECURE=0`. Start the app:
+For localhost, create temporary environment files with `THREADMARK_CONFIG_DIR="$PWD/deploy" node scripts/create-env.mjs https://threadmark.example` and change `COOKIE_SECURE=0` in `deploy/app.env`. Without `INTERNAL_PORT`, the app serves connector routes on its single port, which is fine for loopback development. Start the app:
 
 ```bash
 set -a
-. deploy/threadmark.env
+. deploy/app.env
 set +a
 DATA_DIR="$PWD/data/app" HOST=127.0.0.1 node app/server/index.mjs
 ```
@@ -89,16 +91,16 @@ In another terminal start the bridge:
 
 ```bash
 set -a
-. deploy/threadmark.env
+. deploy/bridge.env
 set +a
 DATA_DIR="$PWD/data/bridge" HOST=127.0.0.1 node bridge/index.mjs
 ```
 
-Start Personal with `GMAIL_PROFILE_ID=personal DATA_DIR="$PWD/data/gmail" HOST=127.0.0.1 PORT=4393`, and Dev with `GMAIL_PROFILE_ID=dev DATA_DIR="$PWD/data/gmail-dev" HOST=127.0.0.1 PORT=4394`. Configure the app's `GMAIL_CONTROL_URL` and `GMAIL_DEV_CONTROL_URL` accordingly. The app listens on `4391`; WhatsApp uses `4392`.
+Load `deploy/gmail.env` for the Gmail connectors. Start Personal with `GMAIL_PROFILE_ID=personal DATA_DIR="$PWD/data/gmail" HOST=127.0.0.1 PORT=4393`, and Dev with `GMAIL_PROFILE_ID=dev DATA_DIR="$PWD/data/gmail-dev" HOST=127.0.0.1 PORT=4394`. Configure the app's `GMAIL_CONTROL_URL` and `GMAIL_DEV_CONTROL_URL` accordingly. The app listens on `4391`; WhatsApp uses `4392`.
 
 ## Podman Compose
 
-With an environment file at `deploy/threadmark.env`:
+With environment files at `deploy/app.env`, `deploy/bridge.env` and `deploy/gmail.env`:
 
 ```bash
 podman compose up --build -d
@@ -108,16 +110,16 @@ curl -fsS http://127.0.0.1:4391/api/health
 Override locations when desired:
 
 ```bash
-THREADMARK_ENV_FILE=/secure/threadmark.env \
+THREADMARK_CONFIG_DIR=/secure/threadmark \
 THREADMARK_DATA_DIR=/srv/threadmark \
 podman compose up --build -d
 ```
 
-The app port is published on loopback. All three connector services are reachable only over the `threadmark` container network.
+The app port is published on loopback. Connector endpoints (`/internal/*`) are served only on the app's unpublished `INTERNAL_PORT` (4390), so they cannot be reached through the published port or any proxy in front of it. All three connector services are reachable only over the `threadmark` container network.
 
 ## Rootless Quadlet production deployment
 
-After generating `~/.config/threadmark/server.env`, run:
+After generating the environment files in `~/.config/threadmark/`, run:
 
 ```bash
 ./deploy.sh
@@ -171,7 +173,7 @@ Threadmark implements the invitation/device contract used by `pwa-invite-console
 sudo python3 scripts/install-console-route.py
 ```
 
-Defaults are `/etc/caddy/Caddyfile`, `/var/www/pwa-invite-console/apps.json`, `/threadmark/api/*` and backend `127.0.0.1:4391`. Override them with `THREADMARK_CADDYFILE`, `THREADMARK_CONSOLE_APPS`, `THREADMARK_CONSOLE_ANCHOR` and `THREADMARK_ENV_FILE`.
+Defaults are `/etc/caddy/Caddyfile`, `/var/www/pwa-invite-console/apps.json`, `/threadmark/api/*` and backend `127.0.0.1:4391`. Override them with `THREADMARK_CADDYFILE`, `THREADMARK_CONSOLE_APPS`, `THREADMARK_CONSOLE_ANCHOR` and `THREADMARK_CONFIG_DIR`.
 
 Only the private console route may inject `X-Admin-Token`.
 
@@ -229,7 +231,7 @@ Back up these as one encrypted set:
 - bridge data directory, including `auth/` and `outbox.sqlite`;
 - Personal Gmail data directory, including encrypted OAuth state and `outbox.sqlite`;
 - Dev Gmail data directory, including its independent encrypted OAuth state and `outbox.sqlite`;
-- `server.env`.
+- `app.env`, `bridge.env` and `gmail.env`.
 
 For a consistent simple backup, stop all services first:
 
