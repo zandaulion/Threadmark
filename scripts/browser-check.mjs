@@ -34,13 +34,13 @@ try {
   if (!notificationIcon.ok || notificationIcon.headers.get('content-type') !== 'image/png') throw new Error('Notification icon is unavailable');
   await page.getByLabel('Device name').fill('Browser check');
   await page.getByRole('button', { name: 'Activate this device' }).click();
-  await page.getByRole('heading', { name: 'Your attention, distilled.' }).waitFor();
-  await page.getByRole('button', { name: 'Choose chats' }).click();
+  await page.getByRole('heading', { name: 'Inbox', level: 1 }).waitFor();
+  await page.locator('#groups-button').click();
   await page.locator('#groups-list').getByText('Parents · Grade 6B', { exact: true }).waitFor();
   await page.locator(`[data-group-id="${groupId}"]`).check();
   await page.getByRole('tab', { name: 'People' }).click();
   await page.getByRole('button', { name: /Import (from phone|\.vcf)/ }).waitFor();
-  await page.getByRole('searchbox', { name: 'Search monitored chats' }).fill('Contact A');
+  await page.getByRole('searchbox', { name: 'Search monitored sources' }).fill('Contact A');
   await page.locator('#contacts-list').getByText('Demo Contact A', { exact: true }).waitFor();
   if (await page.locator('#contacts-list').getByText('Demo Contact B', { exact: true }).count()) throw new Error('People search did not filter the contact list');
   await page.locator(`[data-contact-id="${contactId}"]`).check();
@@ -101,8 +101,9 @@ try {
   await page.screenshot({ path: screenshot, fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForTimeout(150);
-  await page.getByRole('button', { name: 'Enable alerts' }).waitFor();
-  await page.getByRole('button', { name: 'Rules' }).waitFor();
+  // The label follows notification permission, which headless Chromium denies.
+  await page.locator('#alerts-button').waitFor();
+  await page.locator('#mobile-rules-button').waitFor();
   const mobileOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
   if (mobileOverflow) throw new Error('Mobile layout has horizontal overflow');
   await page.screenshot({ path: screenshot.replace(/\.png$/u, '-mobile.png'), fullPage: true });

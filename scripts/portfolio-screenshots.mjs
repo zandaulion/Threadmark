@@ -151,7 +151,7 @@ try {
   await page.goto(`${baseUrl}/?invite=${invite.code}`, { waitUntil: 'networkidle' });
   await page.getByLabel('Device name').fill('Portfolio preview');
   await page.getByRole('button', { name: 'Activate this device' }).click();
-  await page.getByRole('heading', { name: 'Your attention, distilled.' }).waitFor();
+  await page.getByRole('heading', { name: 'Inbox', level: 1 }).waitFor();
 
   const apiPost = async (pathname, body) => {
     const result = await page.evaluate(async ({ pathname, body }) => {
