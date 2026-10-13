@@ -54,6 +54,8 @@ Rules are also profile-specific. A selected Dev source is evaluated only by Dev 
 
 The overview shows the number of open items, payments and meetings. Use the category tabs to show all items, payments, meetings or reminders. Use the status control for open, snoozed and completed items.
 
+The inbox opens with a compact title and notification control, followed by a single row of counters. This keeps messages visible sooner, especially on phones. The Personal/Dev switch remains visible while scrolling.
+
 When the installed PWA is opened or brought back from the background, Threadmark refreshes the counters and current feed from the server and reconnects its live update stream. A manual page reload should not be necessary.
 
 Each card includes:
