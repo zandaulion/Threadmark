@@ -1,0 +1,75 @@
+{
+  "format": "threadmark-rules-v1",
+  "rules": [
+    {
+      "name": "Build or deployment failure",
+      "profile": "dev",
+      "kind": "semantic",
+      "category": "reminder",
+      "condition": "A build, test, deployment, release, production service, certificate, domain, or integration failed or is blocked and requires intervention.",
+      "threshold": 0.82,
+      "notify": true,
+      "enabled": true
+    },
+    {
+      "name": "Dev security or access change",
+      "profile": "dev",
+      "kind": "semantic",
+      "category": "reminder",
+      "condition": "A security, authentication, permission, key, token, vulnerability, or account-access change affects a development project or service I own.",
+      "threshold": 0.8,
+      "notify": true,
+      "enabled": true
+    },
+    {
+      "name": "Review or reply requested",
+      "profile": "dev",
+      "kind": "semantic",
+      "category": "reminder",
+      "condition": "A person directly asks me to review code, make a technical decision, provide information, or reply about a development project.",
+      "threshold": 0.82,
+      "notify": true,
+      "enabled": true
+    },
+    {
+      "name": "Store or policy action",
+      "profile": "dev",
+      "kind": "semantic",
+      "category": "reminder",
+      "condition": "An app store, developer platform, or service provider requires action to avoid rejection, suspension, expiration, policy non-compliance, or service interruption.",
+      "threshold": 0.8,
+      "notify": true,
+      "enabled": true
+    },
+    {
+      "name": "User issue needs attention",
+      "profile": "dev",
+      "kind": "semantic",
+      "category": "reminder",
+      "condition": "A real user or tester reports a bug, failed purchase, refund problem, account problem, or other product issue that deserves a response.",
+      "threshold": 0.82,
+      "notify": true,
+      "enabled": true
+    },
+    {
+      "name": "Deliveries and reservations",
+      "profile": "personal",
+      "kind": "semantic",
+      "category": "reminder",
+      "condition": "A parcel or order needs the recipient to act: it is waiting for pickup (locker, easybox, office) or about to be returned, a delivery failed or needs an address, phone confirmation or fee, or a booking, ticket or reservation was cancelled, changed, or needs confirmation. Order placed or confirmed, packed, shipped, handed to the courier, in transit, delivered, picked up and payment receipts do not count.",
+      "threshold": 0.78,
+      "notify": true,
+      "enabled": true
+    },
+    {
+      "name": "School or family administration",
+      "profile": "personal",
+      "kind": "semantic",
+      "category": "reminder",
+      "condition": "The message contains an actionable school or family administration matter such as a form, permission or consent, required material, document, enrollment, deadline, or schedule change that the recipient should notice or act on.",
+      "threshold": 0.78,
+      "notify": true,
+      "enabled": true
+    }
+  ]
+}

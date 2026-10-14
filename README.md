@@ -275,6 +275,16 @@ node scripts/configure-jev.mjs --disable
 systemctl --user restart threadmark-app.service
 ```
 
+## Exporting rules
+
+Phrase rules and semantic monitors can be shared or kept in Git without the data stored around them:
+
+```bash
+node scripts/export-rules.mjs --out threadmark-rules.json
+```
+
+The export contains only each rule's name, profile, kind, category, phrases or condition, threshold and notification/enabled flags. It refuses rules limited to specific chats or senders, because their scope consists of phone numbers, group IDs and email addresses; add `--skip-scoped` to leave those out. It also refuses any rule whose text looks like a phone number, email address or WhatsApp/Gmail ID. The script reads `~/.local/share/threadmark/app/threadmark.sqlite` read-only; pass another database path as an argument. Never commit the database itself. [`examples/threadmark-rules.json`](examples/threadmark-rules.json) is a real export of the author's monitors.
+
 ## Extending detectors
 
 Detectors live in `app/server/detectors.mjs` and return a stable attention-item shape. Add new detector modules behind the same contract rather than changing the bridge. Connector events remain normalized to:
