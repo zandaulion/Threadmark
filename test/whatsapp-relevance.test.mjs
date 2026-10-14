@@ -184,3 +184,44 @@ test('requests to someone else in large groups and newsletter prices stay out of
   const personal = await send('Payment of 57.80 USD for your account is due.', inbox);
   assert.equal(personal.items.find((item) => item.type === 'payment').details.attentionTriage.disposition, undefined);
 });
+
+test('Gmail mass promotions leave the inbox, but invoices and transactions stay', async (t) => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'threadmark-relevance-3-'));
+  const jev = {
+    status: () => ({ enabled: true, provider: 'TypeSafe AI', model: 'jev-test', threshold: 0.78 }),
+    async evaluate(text) {
+      const transactional = text.includes('order') ? 0.97 : 0.05;
+      return {
+        ...this.status(), available: true, detections: [], scores: { payment: 0.5 },
+        signals: { replyNeeded: text.includes('reply') ? 0.95 : 0.1, promotional: 0.95, personalObligation: 0.35, transactional, recipientSpecific: 0.09 },
+      };
+    },
+  };
+  const app = createThreadmarkServer({
+    config: { dataDir, webDir: path.join(root, 'app/web'), adminToken: '7'.repeat(64), bridgeToken: '8'.repeat(64), cookieSecure: false },
+    push: { enabled: false, publicKey: '', notifyItem: async () => {} }, jev,
+  });
+  const inbox = { id: 'gmail:label:INBOX', name: 'Inbox', kind: 'gmail_label' };
+  app.store.upsertGmailSources([inbox]); app.store.selectGmailSource(inbox.id, true);
+  await new Promise((resolve) => app.server.listen(0, '127.0.0.1', resolve));
+  t.after(async () => { await app.close(); fs.rmSync(dataDir, { recursive: true, force: true }); });
+  const base = `http://127.0.0.1:${app.server.address().port}`;
+  let sequence = 0;
+  const send = (text) => fetch(`${base}/internal/events`, {
+    method: 'POST', headers: { 'x-bridge-token': '8'.repeat(64), 'content-type': 'application/json' },
+    body: JSON.stringify({ id: `relevance-3-${++sequence}`, sourceId: inbox.id, sourceName: inbox.name, sourceKind: inbox.kind,
+      senderId: 'synthetic-sender', senderName: 'Synthetic sender', sentAt: new Date().toISOString(), text }),
+  }).then((response) => response.json());
+
+  const subscription = await send('Your subscription price has changed to 10 USD per month. Paid consultation: please reply if interested.');
+  assert.ok(subscription.items.length >= 2, 'a subscription item and a reply request');
+  for (const item of subscription.items) {
+    assert.equal(item.details.attentionTriage.disposition, 'promotional', item.title);
+    assert.equal(item.notify, false);
+  }
+  const invoice = await send('Your invoice is ready. Amount: 31 RON.');
+  assert.equal(invoice.items.find((item) => item.details.invoice).details.attentionTriage.disposition, undefined);
+  const order = await send('Payment for your order: 31 RON.');
+  assert.ok(order.items.length, 'the order email creates a payment item');
+  for (const item of order.items) assert.notEqual(item.details.attentionTriage?.disposition, 'promotional', 'transactional mail stays');
+});

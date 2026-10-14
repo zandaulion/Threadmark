@@ -663,8 +663,15 @@ function applyAttentionTriage(detections, analysis, source) {
     const jevOnlyPayment = genericPayment && details.detector === 'jev';
     const whatsappProtected = (detection.type === 'payment' && !jevOnlyPayment)
       || details.ruleId || details.monitorId || details.needsReview;
+    // Mass promotional mail: Jev sees a promotion that is neither a transaction
+    // nor written for the reader. Subscription and reply items from newsletters
+    // qualify; invoices, bank details, explicit payment requests and the user's
+    // own rules and monitors never do.
+    const massPromotion = promotional >= 0.9 && transactional <= 0.15 && recipientSpecific <= 0.15
+      && !details.invoice && !details.iban && !details.paymentRequest
+      && !details.ruleId && !details.monitorId && !details.needsReview;
     const promotionalDisposition = gmailSource
-      ? priceMention || (!protectedDetection && (
+      ? priceMention || massPromotion || (!protectedDetection && (
         (promotional >= GMAIL_PROMOTIONAL_THRESHOLD && personalObligation <= GMAIL_PERSONAL_OBLIGATION_CEILING)
         || lowRelevancePromotion
         || (rejectedPayment && promotional >= 0.85)
