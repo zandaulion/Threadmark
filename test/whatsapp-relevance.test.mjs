@@ -46,6 +46,10 @@ test('reports of a payment already made are informational', () => {
     'Transferat pt Ion Pop pe ing. Multumesc',
     'Transferat ING pentru ANA POP și IOANA POP',
     'Buna ziua, transfer Revolut pentru Ana Pop',
+    'Bună ziua. Transfer pe revolut pt Ana Pop. Mulțumim.',
+    'Buna! Am am transferat in ING 200 pt Ana si Ioana Pop',
+    'Buna ziua, din greseala am transferat de 2 ori pentru Ana Pop',
+    'Bun\u0103 ziua, am transferat pentru Ana Pop'.normalize('NFD'),
   ]) assert.equal(isInformationalReceipt(text), true, text);
   for (const text of [
     'Bună ziua! Eu nu am reușit sa fac transfer, am încercat de 3 ori',
@@ -115,4 +119,68 @@ test('WhatsApp relevance: payment reports, group replies and promotions', async 
   assert.equal(promotion.items[0].notify, false);
   const obligation = await send('Atelier obligatoriu pentru grupă, 80 lei de copil.');
   assert.equal(obligation.items[0].details.attentionTriage.disposition, undefined, 'a promotion with real obligation stays');
+});
+
+test('group messages report when they open by addressing someone else', () => {
+  const opening = (text, selfName = 'Alex Pop') => normalizeMessage(groupMessage({ conversation: text }), group.name, '', self, selfName);
+  assert.equal(opening('Bună Maria, pune și o poză te rog.').addressedToOther, true);
+  assert.equal(opening('Maria, poți trimite lista?').addressedToOther, true);
+  assert.equal(opening('Bună Alex, poți trimite lista?').addressedToOther, false, 'the user\'s own name is not someone else');
+  for (const text of ['Vineri, 2 octombrie, vă invităm la spectacol.', 'Dragi părinți, vă rog să semnați.', 'Bună ziua, mâine avem ședință.', 'Neata, ne vedem la birou.']) {
+    assert.equal(opening(text).addressedToOther, false, text);
+  }
+  const mention = normalizeMessage(groupMessage({ extendedTextMessage: {
+    text: 'Maria, @99000000000001 confirmă și tu', contextInfo: { mentionedJid: ['99000000000001@lid'] },
+  } }), group.name, '', self, 'Alex Pop');
+  assert.equal(mention.addressedToOther, false, 'a mention of the user wins');
+});
+
+test('requests to someone else in large groups and newsletter prices stay out of the inbox', async (t) => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'threadmark-relevance-2-'));
+  const jev = {
+    status: () => ({ enabled: true, provider: 'TypeSafe AI', model: 'jev-test', threshold: 0.78 }),
+    async evaluate(text, monitors = [], options = {}) {
+      const personal = text.includes('your account');
+      const detections = options.includeBuiltIns !== false && text.includes('poză') ? [{
+        type: 'reminder', key: 'jev-reminder', title: 'Action or deadline mentioned', confidence: 0.9, priority: 0.2,
+        amountMinor: null, currency: null, eventAt: null, notify: true, details: { detector: 'jev', model: 'jev-test' },
+      }] : [];
+      return {
+        ...this.status(), available: true, detections, scores: { payment: options.verifyPayment ? 0.32 : 0.1 },
+        signals: {
+          replyNeeded: 0.1, promotional: 0.8,
+          personalObligation: personal ? 0.4 : 0.05, transactional: 0.05, recipientSpecific: personal ? 0.6 : 0.04,
+        },
+      };
+    },
+  };
+  const app = createThreadmarkServer({
+    config: { dataDir, webDir: path.join(root, 'app/web'), adminToken: '7'.repeat(64), bridgeToken: '8'.repeat(64), cookieSecure: false },
+    push: { enabled: false, publicKey: '', notifyItem: async () => {} }, jev,
+  });
+  const inbox = { id: 'gmail:label:INBOX', name: 'Inbox', kind: 'gmail_label' };
+  const family = { id: '120363000000000666@g.us', name: 'Synthetic family', kind: 'group' };
+  app.store.upsertGroups([{ id: group.id, name: group.name, participantCount: 40 }, { id: family.id, name: family.name, participantCount: 3 }]);
+  app.store.selectGroup(group.id, true); app.store.selectGroup(family.id, true);
+  app.store.upsertGmailSources([inbox]); app.store.selectGmailSource(inbox.id, true);
+  await new Promise((resolve) => app.server.listen(0, '127.0.0.1', resolve));
+  t.after(async () => { await app.close(); fs.rmSync(dataDir, { recursive: true, force: true }); });
+  const base = `http://127.0.0.1:${app.server.address().port}`;
+  let sequence = 0;
+  const send = (text, source, extra = {}) => fetch(`${base}/internal/events`, {
+    method: 'POST', headers: { 'x-bridge-token': '8'.repeat(64), 'content-type': 'application/json' },
+    body: JSON.stringify({ id: `relevance-2-${++sequence}`, sourceId: source.id, sourceName: source.name, sourceKind: source.kind,
+      senderId: 'synthetic-sender', senderName: 'Synthetic sender', sentAt: new Date().toISOString(), direction: 'incoming', text, ...extra }),
+  }).then((response) => response.json());
+
+  const request = 'Bună Maria, pune și o poză te rog.';
+  assert.deepEqual((await send(request, group, { addressedToMe: false, addressedToOther: true })).items, []);
+  assert.equal((await send(request, family, { addressedToMe: false, addressedToOther: true })).items.length, 1, 'small groups keep it');
+  assert.equal((await send('Bună ziua, pune și o poză te rog.', group, { addressedToMe: false, addressedToOther: false })).items.length, 1);
+
+  const newsletter = await send('The premium edition costs $57.80 per year. Payment terms apply.', inbox);
+  assert.equal(newsletter.items[0].details.attentionTriage.disposition, 'promotional');
+  assert.equal(newsletter.items[0].notify, false);
+  const personal = await send('Payment of 57.80 USD for your account is due.', inbox);
+  assert.equal(personal.items.find((item) => item.type === 'payment').details.attentionTriage.disposition, undefined);
 });

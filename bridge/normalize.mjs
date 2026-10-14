@@ -1,4 +1,4 @@
-export function normalizeMessage(message, groupName = '', resolvedContactId = '', selfIds = []) {
+export function normalizeMessage(message, groupName = '', resolvedContactId = '', selfIds = [], selfName = '') {
   const originalSourceId = message?.key?.remoteJid;
   const sourceId = originalSourceId?.endsWith('@g.us')
     ? originalSourceId
@@ -25,19 +25,34 @@ export function normalizeMessage(message, groupName = '', resolvedContactId = ''
     text: text || `[${media.kind === 'audio' ? 'Voice note' : 'Attachment'}]`,
     direction: message.key.fromMe ? 'outgoing' : 'incoming',
     media,
-    ...(sourceKind === 'group' && !message.key.fromMe ? addressing(content, selfIds) : {}),
+    ...(sourceKind === 'group' && !message.key.fromMe ? addressing(content, selfIds, text, selfName) : {}),
   };
 }
 
 // Reports whether a group message mentions the user or quotes one of the
-// user's messages. Omitted when the user's own IDs are not known yet.
-function addressing(content, selfIds) {
+// user's messages, and whether it opens by addressing someone else by name
+// ("Bună Maria, …"). Omitted when the user's own IDs are not known yet.
+function addressing(content, selfIds, text, selfName) {
   const own = new Set((Array.isArray(selfIds) ? selfIds : []).map(jidUser).filter(Boolean));
   if (!own.size) return {};
   const contextInfo = Object.values(content || {}).find((value) => value?.contextInfo)?.contextInfo || {};
   const mentioned = Array.isArray(contextInfo.mentionedJid) ? contextInfo.mentionedJid : [];
   const quotedAuthor = contextInfo.quotedMessage ? contextInfo.participant : null;
-  return { addressedToMe: [...mentioned, quotedAuthor].some((jid) => own.has(jidUser(jid))) };
+  const addressedToMe = [...mentioned, quotedAuthor].some((jid) => own.has(jidUser(jid)));
+  const name = openingName(text);
+  const ownNames = new Set(String(selfName || '').normalize('NFC').toLowerCase().split(/\s+/u).filter(Boolean));
+  return { addressedToMe, addressedToOther: !addressedToMe && Boolean(name) && !ownNames.has(name.toLowerCase()) };
+}
+
+// Words that can open a message in the vocative position without naming a person.
+const NOT_NAMES = new Set(('ziua seara dimineata dimineața tuturor toti toți toate dragi dragilor parinti părinți '
+  + 'doamna doamnă domnul colegi fete baieti băieți luni marti marți miercuri joi vineri sambata sâmbătă '
+  + 'duminica duminică azi maine mâine ieri neata buna bună salut salutare hello hey').split(' '));
+const OPENING_NAME = /^\s*(?:(?:[Bb]un(?:ă|a)(?: [Zz]iua| [Ss]eara| [Dd]imineața| [Dd]imineata)?|[Ss]alut(?:are)?|[Hh]ello|[Hh]i|[Hh]ey|[Nn]eata)[\s,!.]+)?(\p{Lu}\p{Ll}{2,})\s*[,!]/u;
+
+function openingName(text) {
+  const match = String(text || '').normalize('NFC').match(OPENING_NAME);
+  return match && !NOT_NAMES.has(match[1].toLowerCase()) ? match[1] : '';
 }
 
 function jidUser(jid) {

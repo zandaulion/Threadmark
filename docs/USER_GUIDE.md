@@ -149,7 +149,7 @@ For better handwritten results, photograph the page straight on, fill the frame,
 These features are off by default because they widen the amount of selected-chat text held and analyzed:
 
 - **Context-aware updates** detects corrections, cancellations and schedule changes using recent messages from the same selected source.
-- **Reply monitoring** recognizes requests for an answer and closes a reply reminder when your outgoing response arrives. In WhatsApp groups with more than five people, a question becomes **Reply requested** only when it mentions you or replies to one of your messages; in smaller groups and private chats every question counts.
+- **Reply monitoring** recognizes requests for an answer and closes a reply reminder when your outgoing response arrives. In WhatsApp groups with more than five people, a question becomes **Reply requested** only when it mentions you or replies to one of your messages; in smaller groups and private chats every question counts. A message in a larger group that opens by addressing someone else by name ("Bună Maria, …") does not create Jev reminders for you.
 
 When either is enabled, a rolling local context buffer is retained for at most 48 hours. Recent text and incoming/outgoing direction may be included in Jev evaluation; identities and WhatsApp IDs are not sent.
 

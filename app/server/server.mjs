@@ -181,7 +181,14 @@ export function createThreadmarkServer(options = {}) {
           // requested only when the message mentions the user or quotes the
           // user's message. Small groups behave like private chats.
           const participants = selection.source.kind === 'group' ? store.participantCount(selection.source.id) : 0;
-          const replyIsForUser = participants <= SMALL_GROUP_MAX_PARTICIPANTS || body.addressedToMe !== false;
+          const largeGroup = participants > SMALL_GROUP_MAX_PARTICIPANTS;
+          // "Bună Maria, …" in a large group is a request to Maria: Jev's own
+          // reminders do not apply to the user. Custom monitors still do.
+          const addressedElsewhere = largeGroup && body.addressedToOther === true;
+          if (addressedElsewhere) {
+            detections = detections.filter((item) => !(item.type === 'reminder' && item.details?.detector === 'jev' && !item.details?.monitorId));
+          }
+          const replyIsForUser = !addressedElsewhere && (!largeGroup || body.addressedToMe !== false);
           if (replyIsForUser && analysis.signals?.replyNeeded >= 0.82 && !detections.some((item) => item.type === 'reminder')) {
             const dueAt = new Date(new Date(body.sentAt || Date.now()).valueOf() + settings.replyDelayHours * 3_600_000).toISOString();
             detections.push({
@@ -642,6 +649,11 @@ function applyAttentionTriage(detections, analysis, source) {
     if (genericPayment && typeof paymentProbability === 'number' && Number.isFinite(paymentProbability)) {
       details.paymentVerification = { detector: 'jev', model: analysis.model || null, probability: paymentProbability };
     }
+    // Newsletters often mention prices. A price-only payment match that Jev
+    // judges unlikely to be a real payment, and neither an obligation nor
+    // aimed at the reader, is an article rather than a bill.
+    const priceMention = genericPayment && typeof paymentProbability === 'number' && Number.isFinite(paymentProbability)
+      && paymentProbability <= 0.35 && personalObligation <= 0.15 && recipientSpecific <= 0.15;
     const protectedDetection = (detection.type === 'payment' && !rejectedPayment)
       || details.ruleId || details.monitorId || details.needsReview;
     const lowRelevancePromotion = promotional >= 0.85 && personalObligation <= 0.15
@@ -652,11 +664,11 @@ function applyAttentionTriage(detections, analysis, source) {
     const whatsappProtected = (detection.type === 'payment' && !jevOnlyPayment)
       || details.ruleId || details.monitorId || details.needsReview;
     const promotionalDisposition = gmailSource
-      ? !protectedDetection && (
+      ? priceMention || (!protectedDetection && (
         (promotional >= GMAIL_PROMOTIONAL_THRESHOLD && personalObligation <= GMAIL_PERSONAL_OBLIGATION_CEILING)
         || lowRelevancePromotion
         || (rejectedPayment && promotional >= 0.85)
-      )
+      ))
       : !whatsappProtected && promotional >= WHATSAPP_PROMOTIONAL_THRESHOLD
         && personalObligation <= WHATSAPP_PERSONAL_OBLIGATION_CEILING;
     if (!promotionalDisposition) return { ...detection, details };

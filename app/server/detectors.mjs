@@ -3,9 +3,10 @@ import { findClockTime, findNumericDate } from './dates.mjs';
 const PAYMENT_WORDS = /\b(pay|payment|paid|owe|owes|due|transfer|bank|iban|contribution|plata|plăti|platit|plătit|dator|transfer|virament|cont|cotiza|strângem|strangem)\b/iu;
 const RECEIPT_WORDS = /(?:\border receipt\b|\breceipt\b|\border confirmation\b|\bpurchase confirmation\b|\bpayment (?:confirmation|successful|received|completed)\b|\balready paid\b|\bchitan(?:ță|ta)\b|\bconfirmarea pl(?:ă|a)ții\b|\bplata (?:a fost )?(?:efectuat(?:ă|a)|finalizat(?:ă|a)|confirmat(?:ă|a))\b)/iu;
 // A group member reporting a payment they made: "Am transferat pentru X",
-// "Transferat ING pentru X", "transfer Revolut pentru X". Anchored to the
-// opening so "nu am reușit să fac transferul" or a later mention cannot match.
-const PAYMENT_REPORT = /^\s*(?:(?:bun(?:ă|a) (?:ziua|seara|dimineața|dimineata)|bun(?:ă|a)|salut(?:are)?|hello|hi)[\s,!.]*)?(?:(?:(?:eu|noi)\s+)?am\s+)?(?:(?:transferat|virat|pl(?:ă|a)tit|achitat|depus)\b|transfer\s+(?:\p{L}+\s+)?(?:pentru|pt)\b)/iu;
+// "Transferat ING pentru X", "Transfer pe revolut pt X", "din greșeală am
+// transferat de 2 ori". Anchored to the opening so "nu am reușit să fac
+// transferul" or a later mention cannot match.
+const PAYMENT_REPORT = /^\s*(?:(?:bun(?:ă|a) (?:ziua|seara|dimineața|dimineata)|bun(?:ă|a)|salut(?:are)?|hello|hi)[\s,!.]*)?(?:din gre(?:ș|ş|s)eal(?:ă|a)\s+)?(?:(?:eu|noi)\s+)?(?:am\s+)*(?:(?:transferat|virat|pl(?:ă|a)tit|achitat|depus)\b|transfer(?:ul)?\s+(?:(?:pe|in|în|prin)\s+)?(?:\p{L}+\s+)?(?:pentru|pt)\b)/iu;
 const PAYMENT_ACTION = /(?:\b(?:please|kindly) pay\b|\bpay (?:now|by|before|until)\b|\b(?:amount|balance|payment) (?:is )?due\b|\byou owe\b|\b(?:must|needs? to) be paid\b|\btransfer (?:the |this )?(?:payment|funds?|money)\b|\b(?:invoice|bill) (?:is )?(?:due|overdue|unpaid)\b|\b(?:vă|va|te) rog (?:să |sa )?(?:plătești|platesti|plata)\b|\b(?:sum(?:a|ă)|total) de plat(?:ă|a)\b|\b(?:scadent(?:ă|a)?|restant(?:ă|a)?|neachitat(?:ă|a)?)\b|\b(?:achită|achita|plătește|plateste|transferă|transfera|virați|virati)\b)/iu;
 const SUBSCRIPTION_CONTEXT = /\b(subscription|membership|member plan|subscribed|resubscribed|re-subscribed|abonament|subscrip(?:ție|tie))\b/iu;
 const TEST_TRANSACTION = /^\s*(?:test\s*:|test (?:order|purchase|transaction)\b)/iu;
@@ -103,7 +104,7 @@ export function detectAttention(message) {
 }
 
 export function isInformationalReceipt(text) {
-  const value = String(text || '').trim();
+  const value = String(text || '').normalize('NFC').trim();
   if (!value) return false;
   // Gmail normalization starts with the subject. Limiting receipt evidence to
   // the opening text avoids suppressing a real request that merely mentions an

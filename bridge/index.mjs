@@ -112,7 +112,7 @@ async function connect() {
         if (mapped) lidToPhone.set(lidUser(lid), mapped);
         return mapped;
       });
-      const normalized = normalizeMessage(message, groupNames.get(originalSourceId), resolvedSourceId, [socket?.user?.id, socket?.user?.lid]);
+      const normalized = normalizeMessage(message, groupNames.get(originalSourceId), resolvedSourceId, [socket?.user?.id, socket?.user?.lid], socket?.user?.name);
       if (!normalized) continue;
       if (normalized.direction === 'outgoing' && (!routing.outgoingMonitoring || !routing.sourceIds.has(normalized.sourceId))) continue;
       // A source enabled in the last few seconds may not be in the cached routing yet.
