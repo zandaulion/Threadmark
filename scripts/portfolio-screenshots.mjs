@@ -177,7 +177,7 @@ try {
   });
   await apiPost('/api/rules', {
     name: 'Deliveries and reservations', kind: 'semantic',
-    condition: 'A parcel, booking, ticket, address, pickup, cancellation, or reservation requires attention.',
+    condition: 'A parcel or order needs the recipient to act: it is waiting for pickup or about to be returned, a delivery failed or needs an address or fee, or a booking, ticket or reservation was cancelled, changed or needs confirmation.',
     category: 'reminder', threshold: 0.78, scope: 'all', sourceIds: [], notify: true, enabled: true,
   });
   await apiPost('/api/rules', {
@@ -241,8 +241,21 @@ try {
     captures.push({ file: path.relative(root, file), width, height, description });
   };
 
-  await page.evaluate(() => window.scrollTo(0, 0));
-  await capture('threadmark-desktop-1440x1000.png', 1440, 1000, 'Desktop attention inbox with synthetic alerts.');
+  // The inbox at common screen sizes, from a wide monitor to a small phone.
+  const inboxAt = async (name, width, height, description, { toFeed = false } = {}) => {
+    await page.setViewportSize({ width, height });
+    await page.evaluate(() => window.scrollTo(0, 0));
+    if (toFeed) {
+      await page.locator('.feed-heading').scrollIntoViewIfNeeded();
+      await page.evaluate(() => window.scrollBy(0, -12));
+    }
+    await capture(name, width, height, description);
+  };
+  await inboxAt('threadmark-desktop-1920x1080.png', 1920, 1080, 'Wide desktop attention inbox with synthetic alerts.');
+  await inboxAt('threadmark-desktop-1440x1000.png', 1440, 1000, 'Desktop attention inbox with synthetic alerts.');
+  await inboxAt('threadmark-laptop-1280x800.png', 1280, 800, 'Laptop attention inbox with synthetic alerts.');
+  await inboxAt('threadmark-tablet-landscape-1180x820.png', 1180, 820, 'Tablet landscape attention inbox with synthetic alerts.');
+  await inboxAt('threadmark-tablet-834x1112.png', 834, 1112, 'Tablet portrait attention inbox with synthetic alerts.');
 
   await page.setViewportSize({ width: 834, height: 1112 });
   await page.evaluate(() => window.scrollTo(0, 0));
@@ -251,14 +264,18 @@ try {
   await capture('threadmark-tablet-rules-834x1112.png', 834, 1112, 'Tablet rules view with local and Jev monitors.');
   await page.locator('#rules-close').click();
 
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.locator('.feed-heading').scrollIntoViewIfNeeded();
-  await page.evaluate(() => window.scrollBy(0, -12));
-  await capture('threadmark-mobile-390x844.png', 390, 844, 'Mobile attention inbox with synthetic messages.');
+  await inboxAt('threadmark-mobile-390x844.png', 390, 844, 'Mobile attention inbox with synthetic messages.', { toFeed: true });
+  await inboxAt('threadmark-mobile-small-360x740.png', 360, 740, 'Small Android phone attention inbox with synthetic messages.', { toFeed: true });
 
+  await page.setViewportSize({ width: 390, height: 844 });
   await page.locator('#mobile-rules-button').click();
   await page.locator('#rules-dialog[open]').waitFor();
   await capture('threadmark-mobile-rules-390x844.png', 390, 844, 'Mobile rules view with the Jev section collapsed.');
+  await page.locator('#rules-close').click();
+
+  await page.locator('#mobile-groups-button').click();
+  await page.locator('#groups-dialog[open]').waitFor();
+  await capture('threadmark-mobile-sources-390x844.png', 390, 844, 'Mobile source selection with synthetic groups.');
 
   if (browserErrors.length) throw new Error(`Browser errors: ${browserErrors.join(' | ')}`);
   fs.writeFileSync(path.join(outputDir, 'manifest.json'), `${JSON.stringify({ generatedAt: new Date().toISOString(), syntheticData: true, captures }, null, 2)}\n`);

@@ -1,12 +1,36 @@
 {
-  "generatedAt": "2026-10-02T07:06:12.431Z",
+  "generatedAt": "2026-10-15T03:10:19.885Z",
   "syntheticData": true,
   "captures": [
+    {
+      "file": "docs/images/portfolio/threadmark-desktop-1920x1080.png",
+      "width": 1920,
+      "height": 1080,
+      "description": "Wide desktop attention inbox with synthetic alerts."
+    },
     {
       "file": "docs/images/portfolio/threadmark-desktop-1440x1000.png",
       "width": 1440,
       "height": 1000,
       "description": "Desktop attention inbox with synthetic alerts."
+    },
+    {
+      "file": "docs/images/portfolio/threadmark-laptop-1280x800.png",
+      "width": 1280,
+      "height": 800,
+      "description": "Laptop attention inbox with synthetic alerts."
+    },
+    {
+      "file": "docs/images/portfolio/threadmark-tablet-landscape-1180x820.png",
+      "width": 1180,
+      "height": 820,
+      "description": "Tablet landscape attention inbox with synthetic alerts."
+    },
+    {
+      "file": "docs/images/portfolio/threadmark-tablet-834x1112.png",
+      "width": 834,
+      "height": 1112,
+      "description": "Tablet portrait attention inbox with synthetic alerts."
     },
     {
       "file": "docs/images/portfolio/threadmark-tablet-rules-834x1112.png",
@@ -21,10 +45,22 @@
       "description": "Mobile attention inbox with synthetic messages."
     },
     {
+      "file": "docs/images/portfolio/threadmark-mobile-small-360x740.png",
+      "width": 360,
+      "height": 740,
+      "description": "Small Android phone attention inbox with synthetic messages."
+    },
+    {
       "file": "docs/images/portfolio/threadmark-mobile-rules-390x844.png",
       "width": 390,
       "height": 844,
       "description": "Mobile rules view with the Jev section collapsed."
+    },
+    {
+      "file": "docs/images/portfolio/threadmark-mobile-sources-390x844.png",
+      "width": 390,
+      "height": 844,
+      "description": "Mobile source selection with synthetic groups."
     }
   ]
 }

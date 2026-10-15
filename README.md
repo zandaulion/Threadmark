@@ -8,13 +8,25 @@ Threadmark is a private, installable attention inbox for selected WhatsApp chats
 
 The images below are captured from the real PWA using a temporary database and entirely synthetic chats. No personal WhatsApp data is used.
 
-| Desktop inbox | Mobile inbox |
+| Wide desktop inbox · 1920×1080 | Mobile inbox · 390×844 |
 | --- | --- |
-| [![Threadmark desktop inbox](docs/images/portfolio/threadmark-desktop-1440x1000.png)](docs/images/portfolio/threadmark-desktop-1440x1000.png) | [![Threadmark mobile inbox](docs/images/portfolio/threadmark-mobile-390x844.png)](docs/images/portfolio/threadmark-mobile-390x844.png) |
+| [![Threadmark wide desktop inbox](docs/images/portfolio/threadmark-desktop-1920x1080.png)](docs/images/portfolio/threadmark-desktop-1920x1080.png) | [![Threadmark mobile inbox](docs/images/portfolio/threadmark-mobile-390x844.png)](docs/images/portfolio/threadmark-mobile-390x844.png) |
 
-| Tablet rules | Mobile rules |
+| Desktop inbox · 1440×1000 | Small phone inbox · 360×740 |
 | --- | --- |
-| [![Threadmark tablet rules](docs/images/portfolio/threadmark-tablet-rules-834x1112.png)](docs/images/portfolio/threadmark-tablet-rules-834x1112.png) | [![Threadmark mobile rules](docs/images/portfolio/threadmark-mobile-rules-390x844.png)](docs/images/portfolio/threadmark-mobile-rules-390x844.png) |
+| [![Threadmark desktop inbox](docs/images/portfolio/threadmark-desktop-1440x1000.png)](docs/images/portfolio/threadmark-desktop-1440x1000.png) | [![Threadmark small phone inbox](docs/images/portfolio/threadmark-mobile-small-360x740.png)](docs/images/portfolio/threadmark-mobile-small-360x740.png) |
+
+| Laptop inbox · 1280×800 | Mobile rules · 390×844 |
+| --- | --- |
+| [![Threadmark laptop inbox](docs/images/portfolio/threadmark-laptop-1280x800.png)](docs/images/portfolio/threadmark-laptop-1280x800.png) | [![Threadmark mobile rules](docs/images/portfolio/threadmark-mobile-rules-390x844.png)](docs/images/portfolio/threadmark-mobile-rules-390x844.png) |
+
+| Tablet landscape inbox · 1180×820 | Mobile sources · 390×844 |
+| --- | --- |
+| [![Threadmark tablet landscape inbox](docs/images/portfolio/threadmark-tablet-landscape-1180x820.png)](docs/images/portfolio/threadmark-tablet-landscape-1180x820.png) | [![Threadmark mobile source selection](docs/images/portfolio/threadmark-mobile-sources-390x844.png)](docs/images/portfolio/threadmark-mobile-sources-390x844.png) |
+
+| Tablet portrait inbox · 834×1112 | Tablet rules · 834×1112 |
+| --- | --- |
+| [![Threadmark tablet portrait inbox](docs/images/portfolio/threadmark-tablet-834x1112.png)](docs/images/portfolio/threadmark-tablet-834x1112.png) | [![Threadmark tablet rules](docs/images/portfolio/threadmark-tablet-rules-834x1112.png)](docs/images/portfolio/threadmark-tablet-rules-834x1112.png) |
 
 ## Documentation
 
