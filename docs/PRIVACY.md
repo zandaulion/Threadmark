@@ -67,7 +67,7 @@ If OCR cannot read an image from a monitored individual contact, Threadmark keep
 
 ## Retention
 
-`RETENTION_DAYS` defaults to 30. Once per minute the app deletes expired context and messages older than that cutoff unless they still back an open attention item. The related completed attention item is removed through the database cascade when its message is pruned. Open items remain until resolved, even beyond the cutoff.
+`RETENTION_DAYS` defaults to 30. Once per minute the app deletes expired context and messages older than that cutoff unless they still back an open attention item. The related completed attention item is removed through the database cascade when its message is pruned. Open items remain until resolved, even beyond the cutoff. The app database and both connector outboxes use SQLite `secure_delete`, so deleted and pruned text is overwritten rather than left in free pages.
 
 Context messages expire after 48 hours. Disabling both context-aware and outgoing-message monitoring immediately clears that context table.
 

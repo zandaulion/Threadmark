@@ -8,7 +8,7 @@ app/web/          dependency-free PWA, styles, service worker and icons
 bridge/           Baileys connector, normalization, media pipeline and outbox
 gmail/            Gmail OAuth, incremental sync, MIME normalization and outbox
 deploy/           container images and rootless Quadlet units
-scripts/          environment, Jev, console, browser and portfolio utilities
+scripts/          environment, Jev, console, browser, portfolio and rule-export utilities
 test/             Node test suite
 docs/             user, architecture, deployment, privacy and API guides
 ```
@@ -142,7 +142,7 @@ It does not open or modify production data. Keep all fixture names, numbers, acc
 
 ## Browser smoke test
 
-`scripts/browser-check.mjs` is intended for an already running disposable/test instance. It accepts a base URL, invitation code and bridge token and mutates that instance with synthetic data:
+`scripts/browser-check.mjs` is intended for an already running disposable/test instance. It accepts a base URL, invitation code and bridge token and mutates that instance with synthetic data. It posts connector events to the same base URL, so run the instance without `INTERNAL_PORT` (the default outside the container images); never point it at production:
 
 ```bash
 node scripts/browser-check.mjs BASE_URL INVITE_CODE BRIDGE_TOKEN /tmp/threadmark.png

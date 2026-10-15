@@ -59,6 +59,8 @@ The two connectors and app run as separate rootless Podman containers on a priva
 - Jev urgency probability stored as a priority signal; high-urgency items rise in the feed and receive a visible badge and urgent notification title.
 - Local absolute/relative deadline extraction, due/overdue badges and downloadable calendar events.
 - Snooze, a reviewable Promotional view, daily digest, useful/not-relevant feedback and category correction controls.
+- Grouped notifications: alerts still on screen fold into one summary per profile ("3 alerts · 2 payments, 1 action"); dismissing it or opening the app starts a fresh count.
+- Privacy-safe export of rules and monitors for sharing or version control (`scripts/export-rules.mjs`).
 - Optional context-aware correction/cancellation detection with a 48-hour local rolling buffer.
 - Optional outgoing-message monitoring that closes reply reminders when you answer.
 - Conservative payment warnings for changed details, changed amounts, possible duplicates and unusual credential/payment language.

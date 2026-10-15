@@ -138,6 +138,8 @@ Mobile operating systems commonly suspend an installed PWA and its SSE connectio
 
 Item push payloads include up to two Web Notification actions. The service worker handles **Done** with an authenticated same-origin status request and leaves the app closed on success; a failure falls back to opening the item. **Actions** opens an item-scoped fragment, after which the PWA scrolls to the matching card and expands its in-flow action menu. Platforms that do not expose notification actions retain the normal notification tap behavior.
 
+Item payloads also carry `category`, `urgent`, `profileId`, `profileName` and `profileUrl`. The service worker shows all alerts for a profile under one tag (`threadmark-alerts-<profile>`). On each push it reads the notification still on screen with `getNotifications`, adds the alert (replacing an earlier alert for the same item), and shows either the single-item notification or a summary titled with the count and per-category breakdown, listing the latest three lines. Pushes are applied sequentially so simultaneous alerts are all counted. The PWA closes these notifications when it becomes visible, so a dismissed or seen summary restarts the count. Without `getNotifications`, each alert keeps its own notification.
+
 The service worker caches only the application shell. API and internal routes are network-only and never cached. Static assets are network-first so deployments update promptly; the `/bust` recovery page clears stale cache state.
 
 ## Extension points

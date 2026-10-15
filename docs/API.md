@@ -188,6 +188,8 @@ Example normalized event:
 }
 ```
 
+WhatsApp group events may also carry `addressedToMe` (the message mentions the user or quotes the user's message) and `addressedToOther` (it opens by addressing another named person). In groups of more than five participants these gate Jev reply requests and built-in reminders; when absent, the previous behaviour applies. For messages from unselected chats the bridge sends empty `text` and `media: null`.
+
 `POST /internal/events` is idempotent for a stable message ID. It can return `accepted:false` for an invalid or unselected source, `accepted:true` with no items when nothing matches, or the new attention items.
 
 ## Bridge control API
