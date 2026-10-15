@@ -59,3 +59,15 @@ test('subscription lifecycle events have a specific notification title', () => {
   });
   assert.equal(payload.title, 'Subscription update');
 });
+
+test('push payloads carry what the service worker needs to summarise alerts', () => {
+  const payload = notificationPayload({
+    id: 'message:dev', type: 'payment', title: 'Invoice', priority: 0.9,
+    source: { name: 'Billing' }, profile: { id: 'dev', name: 'Dev' },
+  });
+  assert.equal(payload.category, 'payment');
+  assert.equal(payload.urgent, true);
+  assert.equal(payload.profileId, 'dev');
+  assert.equal(payload.profileName, 'Dev');
+  assert.equal(payload.profileUrl, '/?profile=dev');
+});

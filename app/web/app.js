@@ -77,6 +77,7 @@ async function boot() {
     await refreshAlertStatus();
     connectStream();
     registerModelTools();
+    void clearAlertNotifications();
   } catch (error) {
     showGate(error.message);
   }
@@ -429,7 +430,21 @@ document.addEventListener('visibilitychange', () => {
   const reconnect = wasHidden;
   wasHidden = false;
   void refreshOnForeground({ reconnect });
+  void clearAlertNotifications();
 });
+
+// Opening the app counts as seeing the alerts, so the summary notification
+// is cleared and the next alert starts a fresh count.
+async function clearAlertNotifications() {
+  if (!state.authenticated || !('serviceWorker' in navigator)) return;
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    if (typeof registration.getNotifications !== 'function') return;
+    for (const notification of await registration.getNotifications()) {
+      if (notification.tag?.startsWith('threadmark-alerts-')) notification.close();
+    }
+  } catch {}
+}
 
 window.addEventListener('pageshow', (event) => {
   void refreshOnForeground({ reconnect: event.persisted });

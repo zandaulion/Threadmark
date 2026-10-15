@@ -51,6 +51,12 @@ export function notificationPayload(item) {
     url: `${profilePath}#item=${encodeURIComponent(item.id)}`,
     actionsUrl: `${profilePath}#item=${encodeURIComponent(item.id)}&actions=1`,
     itemId: item.id,
+    // The service worker folds alerts still on screen into one summary per profile.
+    category: item.type,
+    urgent,
+    profileId,
+    profileName,
+    profileUrl: profilePath,
     actions: [{ action: 'done', title: 'Done' }, { action: 'actions', title: 'Actions' }],
     tag: `${profileId}:${item.id}`,
     icon: '/icons/icon-192.png',

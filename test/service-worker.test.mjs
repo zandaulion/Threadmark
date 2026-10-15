@@ -99,3 +99,69 @@ test('a failed Done notification action opens the item instead', async () => {
   await completion;
   assert.deepEqual(harness.opened, ['https://threadmark.test/#item=message%3Aitem']);
 });
+
+function trayHarness() {
+  const harness = serviceWorkerHarness();
+  const tray = [];
+  harness.context.self.registration.showNotification = async (title, options) => {
+    const index = tray.findIndex((entry) => options.tag && entry.tag === options.tag);
+    const entry = { title, ...options, close: () => { const at = tray.indexOf(entry); if (at >= 0) tray.splice(at, 1); } };
+    if (index >= 0) tray.splice(index, 1, entry); else tray.push(entry);
+  };
+  harness.context.self.registration.getNotifications = async ({ tag } = {}) => tray.filter((entry) => !tag || entry.tag === tag);
+  const push = (payload) => {
+    let completion;
+    harness.listeners.push({ data: { json: () => payload }, waitUntil: (promise) => { completion = promise; } });
+    return completion;
+  };
+  return { tray, push };
+}
+
+const alert = (id, category, extra = {}) => ({
+  title: 'Payment mentioned', body: `Source ${id}: ${category}`, url: `/#item=${id}`, actionsUrl: `/#item=${id}&actions=1`,
+  itemId: id, category, urgent: false, profileId: 'personal', profileName: 'Personal', profileUrl: '/',
+  actions: [{ action: 'done', title: 'Done' }, { action: 'actions', title: 'Actions' }], ...extra,
+});
+
+test('alerts still on screen are folded into one summary notification', async () => {
+  const { tray, push } = trayHarness();
+  await push(alert('a', 'payment'));
+  assert.equal(tray.length, 1);
+  assert.equal(tray[0].title, 'Payment mentioned', 'a single alert looks as before');
+  assert.equal(tray[0].actions.length, 2);
+  await push(alert('b', 'payment'));
+  await push(alert('c', 'reminder'));
+  assert.equal(tray.length, 1);
+  assert.equal(tray[0].title, '3 alerts · 2 payments, 1 action');
+  assert.equal(tray[0].body, 'Source c: reminder\nSource b: payment\nSource a: payment');
+  assert.equal(tray[0].tag, 'threadmark-alerts-personal');
+  assert.equal(tray[0].renotify, true);
+  assert.deepEqual(tray[0].actions, undefined);
+  assert.equal(tray[0].data.url, '/');
+  await push(alert('d', 'meeting', { urgent: true }));
+  assert.equal(tray[0].title, 'Urgent · 4 alerts · 2 payments, 1 meeting, 1 action');
+  assert.match(tray[0].body, /\+1 more$/u);
+});
+
+test('a dismissed summary starts a fresh count, profiles stay separate and repeats are not counted twice', async () => {
+  const { tray, push } = trayHarness();
+  await push(alert('a', 'payment'));
+  await push(alert('b', 'reminder'));
+  tray[0].close();
+  await push(alert('c', 'meeting'));
+  assert.equal(tray[0].title, 'Payment mentioned', 'after dismissal the next alert stands alone');
+  await push(alert('c', 'meeting'));
+  assert.equal(tray[0].title, 'Payment mentioned', 'a repeated alert for the same item does not add to the count');
+  await push(alert('x', 'reminder', { profileId: 'dev', profileName: 'Dev', profileUrl: '/?profile=dev' }));
+  await push(alert('y', 'reminder', { profileId: 'dev', profileName: 'Dev', profileUrl: '/?profile=dev' }));
+  assert.equal(tray.length, 2);
+  assert.equal(tray[1].title, 'Dev · 2 alerts · 2 actions');
+  assert.equal(tray[1].data.url, '/?profile=dev');
+});
+
+test('alerts arriving at the same moment are both counted', async () => {
+  const { tray, push } = trayHarness();
+  await Promise.all([push(alert('a', 'payment')), push(alert('b', 'payment')), push(alert('c', 'reminder'))]);
+  assert.equal(tray.length, 1);
+  assert.equal(tray[0].title, '3 alerts · 2 payments, 1 action');
+});
