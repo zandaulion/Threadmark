@@ -4,6 +4,19 @@ Threadmark is a private, installable attention inbox for selected WhatsApp chats
 
 > **Important:** the linked-device connector is unofficial. WhatsApp can change its protocol or restrict an account using an unofficial client. Threadmark deliberately does not send messages, mark messages as read, change presence or scrape history. Groups and people are disabled until you explicitly select them.
 
+
+## Start here
+
+Self-hosted, invitation-only access; connecting WhatsApp or Gmail is optional and
+requires your own accounts. Start with [Local development](#local-development),
+then [Deployment](docs/DEPLOYMENT.md) and [Privacy](docs/PRIVACY.md).
+[User guide](docs/USER_GUIDE.md) · [Development guide](docs/DEVELOPMENT.md)
+· [Project overview](https://zandaulion.com/threadmark.html).
+
+Use the documented temporary synthetic screenshot workflow for public examples.
+Never include connector credentials, mailbox/chat exports or a production
+database in an issue or pull request.
+
 ## Portfolio preview
 
 The images below are captured from the real PWA using a temporary database and entirely synthetic chats. No personal WhatsApp data is used.
@@ -316,3 +329,12 @@ For personal matching needs, no code change is required: open **Rules** in the P
 ## License
 
 Threadmark is free software licensed under the [GNU General Public License v3.0 only](LICENSE), SPDX identifier `GPL-3.0-only`. This matches the license of the vendored `pwa-kit` update mechanism.
+
+
+## Support and contributions
+
+Use this repository’s Issues for reproducible bugs and focused feature requests. Include the version, relevant runtime/browser, expected behavior and a minimal synthetic example. Remove credentials, personal records, device identifiers and deployment-specific values before sharing logs or screenshots.
+
+Follow [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) and run `npm test`. Keep connector/media tests isolated from real accounts and production data.
+
+Keep changes focused and update the affected documentation. Security-sensitive reports should follow [SECURITY.md](SECURITY.md).
