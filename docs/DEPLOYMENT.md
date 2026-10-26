@@ -298,6 +298,9 @@ To restore, stop all services, replace every location with the matching backup, 
 
 **Media extraction fails**
 
-- Confirm attachment reading is enabled.
+- Confirm image/PDF reading or the separate voice transcription setting is enabled, and the source is selected.
 - Inspect bridge logs for timeout or unsupported-type messages.
-- The hard attachment limit is 20 MiB; videos are described but not transcribed.
+- The media limit is 20 MiB; recordings are limited to ten minutes. Videos are described but not transcribed.
+- Voice failures can be retried in the Personal **Voice messages** view while the bridge still has a reference (24 hours, three attempts total). References cannot recover a recording that WhatsApp no longer makes downloadable.
+- Rebuild the bridge after this update: its bundled model changes from `tiny` to multilingual `small` and is checked against a fixed SHA-256. Recreating the bridge is needed to apply the `/tmp` memory mount in Compose/Quadlet. Transcription and transcript action detection remain disabled until explicitly enabled.
+- The bridge defaults to two CPU threads. Optional container environment overrides are `WHISPER_THREADS` (clamped to 1–4) and `WHISPER_MODEL` (an existing model path). A model override is not automatically downloaded. Native inference has a duration-dependent time budget of 3–30 minutes; slow or difficult long recordings can time out without blocking ordinary message delivery.

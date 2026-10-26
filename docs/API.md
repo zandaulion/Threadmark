@@ -54,6 +54,8 @@ The create response includes the one-time code and URL. Never expose the admin t
 | `GET` | `/api/feed?profile=&status=&type=` | List up to 100 attention items for one profile |
 | `GET` | `/api/settings` | Read preferences |
 | `PUT` | `/api/settings` | Replace supported preferences |
+| `GET` | `/api/voice-notes?profile=` | Latest 200 voice records, newest first; Personal only |
+| `POST` | `/api/voice-notes/:id/retry?profile=` | Queue an eligible failed recording for another local attempt |
 | `POST` | `/api/items/:id/status` | Set `{status:"open"|"done"}` |
 | `POST` | `/api/items/:id/snooze` | Set future ISO `{until}` |
 | `POST` | `/api/items/:id/feedback` | Set useful/not-relevant/category correction |
@@ -69,6 +71,8 @@ Settings body:
   "contextAware": false,
   "outgoingMonitoring": false,
   "attachmentProcessing": false,
+  "voiceTranscription": false,
+  "voiceActionDetection": false,
   "dailyDigest": false,
   "digestTime": "19:00",
   "timeZone": "Europe/Bucharest",
@@ -76,7 +80,7 @@ Settings body:
 }
 ```
 
-SSE event names are `ready`, `item`, `groups`, `contacts`, `gmail-sources`, `rules`, `bridge` and `settings`.
+SSE event names are `ready`, `item`, `voice`, `groups`, `contacts`, `gmail-sources`, `rules`, `bridge` and `settings`. Voice events trigger an authenticated voice-list reconciliation. Records expose `status` (`queued`, `transcribing`, `ready`, `failed`), `attempt`, `transcript`, `error`, `retryable`, source/sender metadata and timestamps. Raw audio, WhatsApp download URLs and media keys are never exposed. Retry is bounded to three attempts within the bridge reference's 24-hour lifetime; a non-retryable record returns `409`, and an unavailable bridge reference can return `410`.
 
 ## Sources
 
@@ -168,6 +172,7 @@ Limits are 100 total rules, 20 semantic rules, 30 phrase terms and 200 source ID
 | `POST` | `/internal/contacts` | Upsert `{contacts:[...]}` metadata |
 | `POST` | `/internal/gmail/sources` | Upsert `{profileId,sources:[...]}` label/sender metadata |
 | `POST` | `/internal/events` | Ingest one normalized message |
+| `POST` | `/internal/voice-notes` | Store a selected incoming voice status/transcript, independent of attention detection |
 | `POST` | `/internal/status` | Store and broadcast bridge state |
 
 Example normalized event:
@@ -189,6 +194,8 @@ Example normalized event:
 ```
 
 WhatsApp group events may also carry `addressedToMe` (the message mentions the user or quotes the user's message) and `addressedToOther` (it opens by addressing another named person). In groups of more than five participants these gate Jev reply requests and built-in reminders; when absent, the previous behaviour applies. For messages from unselected chats the bridge sends empty `text` and `media: null`.
+
+Voice updates use the normalized source, sender, timestamp and ID fields plus `status`, `attempt` (1–3), optional `durationSeconds`, `error`, `retryUntil` and `transcript`. Attempts and status phases are monotonic; late queued/processing/failure updates cannot overwrite a completed transcript. The endpoint accepts up to 512,000 bytes and transcripts up to 64,000 characters. It checks selection and the transcription setting again at delivery. Optional action events carry `origin: "voice_transcript"`, `voiceAttempt` and audio media metadata; they require the separate action opt-in and a matching stored ready transcript. Ordinary media events cannot bypass that gate.
 
 `POST /internal/events` is idempotent for a stable message ID. It can return `accepted:false` for an invalid or unselected source, `accepted:true` with no items when nothing matches, or the new attention items.
 

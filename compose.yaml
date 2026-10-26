@@ -36,6 +36,8 @@ services:
       APP_INTERNAL_URL: http://app:4390
     volumes:
       - ${THREADMARK_DATA_DIR:-./data}/bridge:/data:Z
+    tmpfs:
+      - /tmp:rw,size=256m,mode=1777
     networks: [threadmark]
     security_opt: [no-new-privileges]
     cap_drop: [ALL]

@@ -8,6 +8,7 @@ Image=localhost/threadmark-bridge:latest
 ContainerName=threadmark-bridge
 Network=threadmark.network
 Volume=%h/.local/share/threadmark/bridge:/data:Z
+Tmpfs=/tmp:rw,size=256m,mode=1777
 EnvironmentFile=%h/.config/threadmark/bridge.env
 Environment=HOST=0.0.0.0
 Environment=PORT=4392

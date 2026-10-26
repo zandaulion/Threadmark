@@ -86,7 +86,12 @@
           </article>
         </div>
 
-        <div class="feed-heading">
+        <div class="view-tabs" role="tablist" aria-label="Message view">
+          <button class="view-tab active" type="button" role="tab" aria-selected="true" data-view="attention">Attention</button>
+          <button class="view-tab" id="voice-view-tab" type="button" role="tab" aria-selected="false" data-view="voice">Voice messages</button>
+        </div>
+        <div class="voice-intro" id="voice-intro" hidden><p>Read voice messages from your selected WhatsApp chats, including those with no task or deadline.</p><button class="text-button" id="voice-refresh-button" type="button">Refresh</button></div>
+        <div class="feed-heading" id="attention-controls">
           <div class="tabs" role="tablist" aria-label="Attention item type">
             <button class="tab active" type="button" role="tab" aria-selected="true" data-filter="all">All</button>
             <button class="tab" type="button" role="tab" aria-selected="false" data-filter="payment">Payments</button>
@@ -183,7 +188,9 @@
       </section>
       <section class="settings-section">
         <h3>Local media</h3>
-        <label class="rule-option"><input id="setting-attachments" type="checkbox"><span><strong>Read attachments locally</strong><small>OCR images/PDFs and transcribe voice notes inside the Podman bridge. Media is deleted immediately after processing.</small></span></label>
+        <label class="rule-option"><input id="setting-attachments" type="checkbox"><span><strong>Read attachments locally</strong><small>Read images and PDFs locally. Files are deleted after processing.</small></span></label>
+        <label class="rule-option"><input id="setting-voice" type="checkbox" aria-labelledby="voice-setting-label" aria-describedby="voice-setting-description"><span><strong id="voice-setting-label">Transcribe voice messages locally</strong><small id="voice-setting-description">Automatically transcribe new voice messages from selected WhatsApp chats. Audio is deleted after each attempt; transcripts follow your retention setting.</small></span></label>
+        <label class="rule-option"><input id="setting-voice-actions" type="checkbox" aria-labelledby="voice-actions-label" aria-describedby="voice-actions-description"><span><strong id="voice-actions-label">Find actions in transcripts</strong><small id="voice-actions-description">Use the existing detectors for payments, meetings and tasks. When Jev is enabled, transcript text can be sent to TypeSafe AI. Leave this off to keep transcription local.</small></span></label>
       </section>
       <section class="settings-section privacy-settings">
         <h3>Optional conversation context</h3>

@@ -6,6 +6,7 @@ export class Outbox {
   constructor(dataDir) {
     fs.mkdirSync(dataDir, { recursive: true, mode: 0o700 });
     this.db = new DatabaseSync(path.join(dataDir, 'outbox.sqlite'));
+    fs.chmodSync(path.join(dataDir, 'outbox.sqlite'), 0o600);
     this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; PRAGMA secure_delete=ON;
       CREATE TABLE IF NOT EXISTS outbox (
         id TEXT PRIMARY KEY,
@@ -24,7 +25,7 @@ export class Outbox {
   }
 
   pending(limit = 100) {
-    return this.db.prepare('SELECT id, endpoint, payload_json, attempts FROM outbox ORDER BY created_at LIMIT ?').all(limit)
+    return this.db.prepare('SELECT id, endpoint, payload_json, attempts FROM outbox ORDER BY created_at, rowid LIMIT ?').all(limit)
       .map((row) => ({ ...row, payload: JSON.parse(row.payload_json) }));
   }
 

@@ -44,30 +44,36 @@ Web Push necessarily passes an encrypted push payload through the browser vendor
 - matched message excerpts and attention items
 - local and semantic rule definitions
 - settings, device records and feedback
-- extracted OCR/transcript text before normal detector routing
+- extracted OCR text before normal detector routing and, when separately enabled, voice transcripts even without an attention match
 - the optional 48-hour context buffer
 
 Phrase rule test samples are evaluated in the browser/server flow locally and are not saved. Jev sample tests are sent to TypeSafe and are not saved by Threadmark.
 
 ## Attachments
 
-Attachment processing is off by default. When enabled for a selected source, the bridge downloads and decrypts the file into a mode-restricted temporary directory. It applies local OCR, PDF extraction or speech transcription, then deletes the directory in a `finally` path whether processing succeeds or fails.
+Image/PDF processing and voice transcription are separate, off-by-default settings. For selected sources the bridge downloads and decrypts media into a mode-restricted temporary directory, performs local extraction, then deletes that directory in a `finally` path on success, failure or cancellation. Container deployments mount temporary storage in memory; startup also removes stale media staging from previous crashes and older bridge versions.
 
 Limits and behavior:
 
 - maximum media size: 20 MiB;
 - images: Tesseract `ron+eng`;
 - PDFs: embedded text or first-page OCR;
-- audio: FFmpeg conversion and local whisper.cpp;
+- audio: FFmpeg conversion and local multilingual whisper.cpp, one recording at a time, maximum ten minutes;
 - videos: metadata only, no content extraction;
 - original media is not stored by Threadmark;
-- extracted text can be sent to Jev under the same rule as typed selected-source text.
+- image/PDF text follows the normal local/Jev routing;
+- voice transcripts stay in the local Voice messages view unless **Find actions in transcripts** is also enabled; only then can they enter the existing local/Jev action pipeline;
+- voice metadata and transcripts are stored independently of attention items and follow `RETENTION_DAYS`;
+- references and keys for downloading encrypted WhatsApp media, plus limited source metadata, stay in the owner-only bridge queue for retries for up to 24 hours. This is local credential storage, not an additional encrypted-at-rest vault. References are removed on success, cancellation, final failure or expiry; they are never sent to the app or TypeSafe. Quoted-message text is stripped from them;
+- view-once recordings are not transcribed. Processing applies only to new incoming audio, not chat-history backfill.
 
 If OCR cannot read an image from a monitored individual contact, Threadmark keeps only a reminder that the original photo needs review in WhatsApp.
 
 ## Retention
 
 `RETENTION_DAYS` defaults to 30. Once per minute the app deletes expired context and messages older than that cutoff unless they still back an open attention item. The related completed attention item is removed through the database cascade when its message is pruned. Open items remain until resolved, even beyond the cutoff. The app database and both connector outboxes use SQLite `secure_delete`, so deleted and pruned text is overwritten rather than left in free pages.
+
+Voice records are also pruned on this schedule, independently of attention matches. If transcript text was explicitly used to create an action, the excerpt supporting an open attention item follows the open-item retention rule above. Disabling transcription cancels unfinished voice work but does not erase completed transcripts immediately.
 
 Context messages expire after 48 hours. Disabling both context-aware and outgoing-message monitoring immediately clears that context table.
 

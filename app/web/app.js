@@ -5,6 +5,8 @@ const state = {
   authenticated: false,
   device: null,
   items: [],
+  voiceNotes: [],
+  view: 'attention',
   groups: [],
   contacts: [],
   gmailSources: [],
@@ -111,7 +113,7 @@ function finishGmailRedirect() {
 }
 
 async function refreshAll() {
-  const [profiles, profileSummaries, feedResult, groups, contacts, gmailSources, rules, bridge, gmail, detection, settings] = await Promise.all([
+  const [profiles, profileSummaries, feedResult, groups, contacts, gmailSources, rules, bridge, gmail, detection, settings, voiceResult] = await Promise.all([
     api('/api/profiles'),
     fetchProfileSummaries(),
     api(profileApi(`/api/feed?type=${encodeURIComponent(state.filter)}&status=${encodeURIComponent(state.status)}`)),
@@ -123,6 +125,7 @@ async function refreshAll() {
     api(profileApi('/api/gmail/status')),
     api('/api/detection/status'),
     api('/api/settings'),
+    api(profileApi('/api/voice-notes')),
   ]);
   state.profiles = profiles.profiles;
   state.profileSummaries = profileSummaries;
@@ -136,6 +139,7 @@ async function refreshAll() {
   state.gmail = gmail;
   state.detection = detection;
   state.settings = settings;
+  state.voiceNotes = voiceResult.notes;
   render();
 }
 
@@ -169,6 +173,8 @@ function renderProfiles() {
     }
   });
   const dev = state.profileId === 'dev';
+  if (dev) state.view = 'attention';
+  $('#voice-view-tab').hidden = dev;
   $('#profile-heading').textContent = dev ? 'Your projects, under control.' : 'Your attention, distilled.';
   $('#profile-lede').textContent = dev
     ? 'Security, deployments, store actions, reviews, and user issues from your development mailbox.'
@@ -203,6 +209,14 @@ function renderSummary() {
 }
 
 function renderFeed() {
+  $('#attention-controls').hidden = state.view === 'voice';
+  $('#voice-intro').hidden = state.view !== 'voice';
+  $$('[data-view]').forEach((tab) => {
+    const active = tab.dataset.view === state.view;
+    tab.classList.toggle('active', active);
+    tab.setAttribute('aria-selected', String(active));
+  });
+  if (state.view === 'voice') return renderVoiceNotes();
   if (!state.items.length) {
     const heading = state.status === 'open' ? 'Nothing waiting'
       : state.status === 'snoozed' ? 'Nothing snoozed'
@@ -225,6 +239,45 @@ function renderFeed() {
   requestAnimationFrame(handleItemDeepLink);
 }
 
+const VOICE_ERRORS = {
+  attachment_too_large: 'This recording is larger than the 20 MiB limit.',
+  audio_too_long: 'This recording is longer than the 10-minute limit.',
+  no_text_found: 'No speech was recognized. You can listen to the original in WhatsApp.',
+  transcript_too_long: 'The transcript exceeded the text limit. Open the recording in WhatsApp.',
+  disabled: 'Transcription was switched off before this recording finished.',
+  source_unselected: 'This chat is no longer selected for transcription.',
+  queue_full: 'Too many recordings were waiting. Listen to this one in WhatsApp.',
+  expired: 'The temporary download reference has expired.',
+  interrupted: 'Processing was interrupted. You can try again.',
+};
+
+function renderVoiceNotes() {
+  if (!state.voiceNotes.length) {
+    feed.innerHTML = `<div class="empty-state"><div class="empty-glyph" aria-hidden="true">♪</div><h2>No voice messages yet</h2><p>${state.settings.voiceTranscription
+      ? 'New voice messages from your selected WhatsApp chats will appear here.'
+      : 'Enable local voice transcription in Preferences, then choose the WhatsApp chats to monitor.'}</p></div>`;
+    return;
+  }
+  feed.innerHTML = state.voiceNotes.map((note) => {
+    const status = { queued: 'Waiting to transcribe', transcribing: 'Transcribing…', ready: 'Transcribed locally', failed: 'Transcription failed' }[note.status];
+    const phone = note.source?.kind === 'contact' ? String(note.source.id).match(/^(\d+)@s\.whatsapp\.net$/u)?.[1] : null;
+    const mobile = /Android|iPhone|iPad/iu.test(navigator.userAgent);
+    const link = phone ? `https://wa.me/${phone}` : mobile ? 'whatsapp://' : 'https://web.whatsapp.com/';
+    const seconds = Number(note.durationSeconds) || 0;
+    const duration = seconds ? `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}` : '';
+    return `<article class="attention-item voice-note" data-voice-id="${escapeHtml(note.id)}">
+      <div class="item-kind voice" aria-hidden="true">♪</div><div>
+        <div class="item-topline"><h3>Voice message${duration ? ` · ${duration}` : ''}</h3><span class="item-group">${escapeHtml(note.source.name)}</span></div>
+        <div class="item-meta"><span>${escapeHtml(note.senderName)}</span><span>·</span><time datetime="${escapeHtml(note.sentAt)}">${formatWhen(note.sentAt)}</time><span class="voice-state ${escapeHtml(note.status)}">${status}</span></div>
+        ${note.status === 'ready' ? `<p class="voice-transcript">${escapeHtml(note.transcript)}</p>`
+          : `<p class="voice-placeholder">${note.status === 'failed' ? escapeHtml(VOICE_ERRORS[note.error] || 'The recording could not be transcribed. Try again or open WhatsApp.')
+            : 'You can keep using Threadmark while this recording is processed.'}</p>`}
+        <div class="voice-actions"><a class="text-button" href="${link}" target="_blank" rel="noopener">Open WhatsApp</a>
+          ${note.retryable ? `<button class="text-button" type="button" data-action="retry-voice" data-id="${escapeHtml(note.id)}">Retry transcription</button>` : ''}
+        </div></div></article>`;
+  }).join('');
+}
+
 function handleItemDeepLink() {
   const params = new URLSearchParams(location.hash.replace(/^#/u, ''));
   const itemId = params.get('item');
@@ -245,6 +298,9 @@ function renderSettings() {
   $('#setting-context').checked = Boolean(state.settings.contextAware);
   $('#setting-outgoing').checked = Boolean(state.settings.outgoingMonitoring);
   $('#setting-attachments').checked = Boolean(state.settings.attachmentProcessing);
+  $('#setting-voice').checked = Boolean(state.settings.voiceTranscription);
+  $('#setting-voice-actions').checked = Boolean(state.settings.voiceActionDetection);
+  $('#setting-voice-actions').disabled = !state.settings.voiceTranscription;
   $('#setting-digest').checked = Boolean(state.settings.dailyDigest);
   $('#setting-digest-time').value = state.settings.digestTime || '19:00';
   $('#setting-reply-delay').value = String(state.settings.replyDelayHours || 8);
@@ -375,6 +431,11 @@ function connectStream() {
     if (!item.profile || item.profile.id === state.profileId) await refreshFeedAndSummary();
     else applyProfileSummaries(await fetchProfileSummaries());
   });
+  stream.addEventListener('voice', async () => {
+    if (state.profileId === 'personal') {
+      try { state.voiceNotes = (await api(profileApi('/api/voice-notes'))).notes; if (state.view === 'voice') renderFeed(); } catch {}
+    }
+  });
   stream.addEventListener('groups', (event) => { state.groups = JSON.parse(event.data); renderSources(); });
   stream.addEventListener('contacts', (event) => { state.contacts = JSON.parse(event.data); renderSources(); });
   stream.addEventListener('gmail-sources', (event) => {
@@ -390,7 +451,7 @@ function connectStream() {
     renderRules();
   });
   stream.addEventListener('bridge', (event) => { state.bridge = JSON.parse(event.data); renderBridge(); });
-  stream.addEventListener('settings', (event) => { state.settings = JSON.parse(event.data); renderSettings(); renderDetection(); });
+  stream.addEventListener('settings', (event) => { state.settings = JSON.parse(event.data); renderSettings(); renderDetection(); if (state.view === 'voice') renderFeed(); });
   stream.onerror = () => {
     if (state.stream !== stream || state.streamRetryTimer) return;
     state.streamRetryTimer = setTimeout(() => {
@@ -401,12 +462,14 @@ function connectStream() {
 }
 
 async function refreshFeedAndSummary() {
-  const [profileSummaries, result] = await Promise.all([
+  const [profileSummaries, result, voices] = await Promise.all([
     fetchProfileSummaries(),
     api(profileApi(`/api/feed?type=${encodeURIComponent(state.filter)}&status=${encodeURIComponent(state.status)}`)),
+    api(profileApi('/api/voice-notes')),
   ]);
   applyProfileSummaries(profileSummaries);
   state.items = result.items;
+  state.voiceNotes = voices.notes;
   renderFeed();
 }
 
@@ -492,7 +555,10 @@ feed.addEventListener('click', async (event) => {
   button.disabled = true;
   try {
     const id = encodeURIComponent(button.dataset.id);
-    if (button.dataset.action === 'done') {
+    if (button.dataset.action === 'retry-voice') {
+      await api(profileApi(`/api/voice-notes/${id}/retry`), { method: 'POST', body: '{}' });
+      showToast('Transcription queued');
+    } else if (button.dataset.action === 'done') {
       await api(`/api/items/${id}/status`, { method: 'POST', body: JSON.stringify({ status: 'done' }) });
       showToast('Marked as done');
     } else if (button.dataset.action === 'snooze') {
@@ -532,6 +598,16 @@ $$('.tab').forEach((tab) => tab.addEventListener('click', async () => {
   $$('.tab').forEach((item) => { item.classList.toggle('active', item === tab); item.setAttribute('aria-selected', String(item === tab)); });
   await refreshFeedAndSummary();
 }));
+
+$$('[data-view]').forEach((tab) => tab.addEventListener('click', async () => {
+  state.view = tab.dataset.view;
+  await refreshFeedAndSummary();
+}));
+$('#voice-refresh-button').addEventListener('click', refreshAll);
+$('#setting-voice').addEventListener('change', () => {
+  $('#setting-voice-actions').disabled = !$('#setting-voice').checked;
+  if (!$('#setting-voice').checked) $('#setting-voice-actions').checked = false;
+});
 
 $$('[data-profile]').forEach((tab) => tab.addEventListener('click', async () => {
   if (tab.dataset.profile === state.profileId) return;
@@ -734,6 +810,8 @@ $('#settings-form').addEventListener('submit', async (event) => {
         contextAware: $('#setting-context').checked,
         outgoingMonitoring: $('#setting-outgoing').checked,
         attachmentProcessing: $('#setting-attachments').checked,
+        voiceTranscription: $('#setting-voice').checked,
+        voiceActionDetection: $('#setting-voice-actions').checked,
         dailyDigest: $('#setting-digest').checked,
         digestTime: $('#setting-digest-time').value,
         replyDelayHours: Number($('#setting-reply-delay').value),
@@ -1152,6 +1230,8 @@ function itemActions(item) {
 }
 
 function readableError(code) {
+  if (code === 'voice_retry_unavailable') return 'This recording can no longer be retried. Open the original in WhatsApp.';
+  if (code === 'voice_disabled') return 'Enable voice transcription and select this chat before retrying.';
   return ({ invalid_invite: 'That invitation is invalid, expired or already used.', throttled: 'Too many attempts. Try again later.', bridge_unavailable: 'The WhatsApp bridge is not available yet.', contact_not_found: 'That number is not registered on WhatsApp.', contact_lookup_failed: 'WhatsApp could not look up that number.', invalid_phone_number: 'Enter a full phone number including country code.', jev_not_configured: 'Jev is not configured on the server yet.', jev_unavailable: 'Jev is temporarily unavailable. Local detection is still active.' })[code];
 }
 

@@ -23,7 +23,7 @@
 
       <h2>Information Threadmark accesses</h2>
       <p>When a mailbox is connected, Threadmark uses the read-only Gmail scope to access the account address, mailbox history checkpoint, message identifiers, labels, sender and subject metadata, and the body of new messages from labels or senders the operator has enabled. It does not import messages that predate the connection checkpoint. Gmail attachments are not downloaded.</p>
-      <p>For selected WhatsApp sources, the linked-device connector receives new message text, limited source metadata and—only when attachment processing is enabled—temporary media needed for local extraction. Unselected message content is rejected before detection and long-term storage.</p>
+      <p>For selected WhatsApp sources, the linked-device connector receives new message text, limited source metadata and—only when image/PDF reading or voice transcription is enabled—temporary media needed for local extraction. Those features have separate switches. Unselected message content is rejected before detection and long-term storage.</p>
 
       <h2>How the information is used</h2>
       <p>Threadmark uses selected content to detect payments, invoices, meetings, reminders, deliveries, family or school administration, software-development events and custom monitors. It creates a private attention item containing the relevant excerpt and workflow state. Gmail access is read-only: Threadmark cannot send, delete, modify or mark email as read.</p>
@@ -32,6 +32,7 @@
       <p>Application data is stored on the operator's self-hosted server. Gmail OAuth tokens are encrypted at rest, with separate credentials and synchronization checkpoints for the Personal and Dev profiles. Matched excerpts normally use a 30-day retention period; an open item can remain longer until resolved. Connector credentials, enabled-source metadata, settings and rules remain until deliberately removed.</p>
 
       <h2>Third-party processing</h2>
+      <p>Optional voice transcription runs locally. Audio is removed after each attempt; temporary download references stay only in the bridge for up to 24 hours to support retries. Transcripts can be shown even without a detected action and follow the normal retention setting. They enter semantic detection only if the separate “Find actions in transcripts” setting is enabled. Switching transcription off cancels unfinished work but does not immediately delete completed transcripts. View-once recordings are excluded.</p>
       <p>Gmail synchronization communicates with Google. WhatsApp linked-device operation communicates with WhatsApp infrastructure. If the operator enables Jev semantic detection, selected text may be transmitted to TypeSafe AI to return classification judgments. Threadmark intentionally omits source names, email addresses, phone numbers and provider message identifiers from those semantic requests. Provider-side handling is governed by the provider's own terms.</p>
       <p>If browser notifications are enabled, an encrypted notification payload passes through the browser vendor's push service. Depending on device settings, notification text may appear on a lock screen.</p>
       <p>Threadmark does not sell personal data, use Gmail data for advertising, or use Gmail data to train generalized artificial-intelligence models.</p>

@@ -19,7 +19,7 @@ The default Podman deployment puts the app, WhatsApp bridge and two Gmail connec
 
 1. Baileys receives a new WhatsApp event with full-history synchronization disabled.
 2. The bridge normalizes it into a connector-neutral event.
-3. The bridge checks its cached routing configuration. Selected attachments can be processed locally before delivery.
+3. The bridge checks its cached routing configuration. Selected images/PDFs can be processed locally before delivery. Incoming audio uses its separate opt-in and a durable, bounded background queue, so voice recognition does not block ordinary message ingestion.
 4. The durable outbox posts the event to the app using `BRIDGE_TOKEN`. Failed deliveries stay queued.
 5. The app verifies that the source exists and is explicitly selected. Unselected content is rejected before detection or long-term storage.
 6. Deterministic invoice, payment and meeting detectors plus enabled local phrase rules run first.
@@ -29,6 +29,18 @@ The default Podman deployment puts the app, WhatsApp bridge and two Gmail connec
 10. The browser renders the current filtered feed and applies actions through authenticated APIs. Because mobile browsers suspend live streams in the background, visibility, focus and restored-page events trigger a throttled feed/summary reconciliation and stream reconnection.
 
 Gmail follows the same flow with a privacy-preserving routing stage. Connection stores the current `historyId` and deliberately performs no historical import. Each poll calls `history.list`; if Google reports an expired checkpoint, Threadmark resets to the current profile history without backfilling. New mail is first retrieved as metadata. A complete body is fetched only after a label or sender matches the allowlist. Plain text is preferred, HTML is reduced to text, quoted replies and signatures are removed, and attachments are ignored.
+
+### Voice transcription
+
+`bridge/voice.mjs` stores voice jobs in the bridge outbox database. A job contains normalized metadata and a serialized WhatsApp audio download reference with quoted context stripped; raw audio never enters the outbox. The queue permits fifty waiting/running jobs and one active recognizer, expires references after 24 hours, and allows three total attempts, including resumed attempts after a process restart. Queue transitions and outgoing status/ready/action events share one SQLite transaction. Successful and permanently failed jobs discard their download references. View-once audio is excluded.
+
+Before downloading, after inference, and before delivering voice data, the bridge refreshes selection and preferences. Deselecting a source or disabling transcription cancels processing and clears pending references. Audio is staged in the bridge's memory-backed `/tmp`, bounded to 20 MiB and ten minutes, converted to mono 16 kHz PCM, and processed by the bundled multilingual Whisper small model with two CPU threads. Subprocesses have time budgets and can be killed on cancellation; temporary directories are removed in `finally`, with crash-staging cleanup on startup.
+
+`POST /internal/voice-notes` stores status/transcript updates independently in `voice_notes`, outside the attention-item taxonomy. The app rechecks eligibility and orders updates by attempt and phase. A `ready` record cannot be replaced by a late failure or processing event. Voice records are Personal-only and retained under `RETENTION_DAYS`; failed eligible records can request an authenticated bridge retry. The PWA reads them in a separate view and reconciles on SSE, refresh and foreground restoration.
+
+Transcripts do not enter context, action detection, push notifications or Jev by default. With the separate `voiceActionDetection` opt-in, the bridge also queues a normal action event after the ready event. The app requires the matching ready record, attempt, source, transcript prefix and current opt-ins before evaluating that event. Reading preserves up to 64,000 characters; analysis uses the existing 12,000-character budget. Oversized transcripts fail visibly rather than being silently clipped in the reading view.
+
+Delayed voice action events are analyzed without recent context, and their cancellation/change/reply signals cannot mutate existing items or create awaiting-reply reminders. Their text can join the local context buffer for subsequent messages if the separate context settings are enabled. This avoids applying a late transcript as a follow-up to newer typed events.
 
 Personal and Dev are first-class profiles. Gmail source, sender, event and outbox identifiers are namespaced by connector profile, and every stored source and rule carries `profile_id`. Existing installations migrate all current data to Personal. The Dev connector uses a separate volume, OAuth token and `historyId`; its authorization state is prefixed so the shared public callback can route the response to the correct connector without exposing account details.
 

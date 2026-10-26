@@ -135,14 +135,27 @@ Local built-in detection and phrase rules run first. Concrete invoice notices in
 Enable **Read attachments locally** under **Settings** to process supported attachments:
 
 - images: Romanian and English Tesseract OCR;
-- PDFs: embedded text first, then first-page OCR as a fallback;
-- voice notes: local multilingual transcription through whisper.cpp.
+- PDFs: embedded text first, then first-page OCR as a fallback.
 
 Files are downloaded into a temporary directory inside the bridge container and removed immediately after processing. Extracted text enters the same detector pipeline as a typed message.
 
 Handwriting is intrinsically harder for the bundled OCR. If an image from a monitored individual contact produces no reliable text, Threadmark creates a **Photo needs review** item so you can inspect the original in WhatsApp. Threadmark does not keep a copy of the image.
 
 For better handwritten results, photograph the page straight on, fill the frame, avoid shadows, use high contrast and send the original-resolution image rather than a screenshot of it.
+
+## Voice messages
+
+In **Preferences**, enable **Transcribe voice messages locally**, then select the WhatsApp people or groups to monitor. Open **Voice messages** beside **Attention** in the Personal profile. This applies to new incoming recordings, including forwarded audio; old chat history and view-once recordings are not imported. The image/PDF setting can remain off.
+
+Cards show the chat, sender, timestamp, available duration, and full transcript. Every recording has its own card, even when it contains no task, payment or meeting. **Waiting to transcribe** and **Transcribing…** update automatically while you keep using Threadmark. The view also refreshes when you return to the app. Failed attempts show a reason and **Retry transcription** when a download reference is still available (up to 24 hours, three attempts total).
+
+Transcription uses a local multilingual Whisper small model with automatic language detection. Automatic text can contain mistakes, particularly in short, noisy or synthetic speech and in names, numbers and times. **Open WhatsApp** opens the contact chat for individual messages; for group recordings it opens WhatsApp so you can find the named group, rather than deep-linking to the exact recording.
+
+Audio is processed one recording at a time, with a 20 MiB / 10-minute limit, and deleted after each attempt. Transcripts are kept under the normal retention setting (30 days by default); the view lists the latest 200. Switching transcription off or deselecting a chat stops pending work. Existing completed transcripts remain until retention removes them.
+
+Leave **Find actions in transcripts** off to keep these transcripts out of semantic detection. Enable it separately to use the existing payment, meeting and task detectors; if Jev is enabled, transcript text may then be sent to TypeSafe AI. Detection uses the first 12,000 characters, while the reading view preserves the full transcript up to 64,000 characters. Voice cards themselves do not increment attention counts or send push alerts; a separately detected action follows the normal alert rules.
+
+Because recognition can finish after newer typed messages arrive, voice action analysis is standalone: it does not automatically change or cancel an older item or create an awaiting-reply reminder from conversation context.
 
 ## Context, changes and replies
 

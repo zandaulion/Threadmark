@@ -358,3 +358,19 @@ input:focus, select:focus, textarea:focus { border-color: var(--teal); box-shado
   .summary-card.accent { background: #243043; border-color: #243043; }
   .confidence { background: #ffffff0c; }
 }
+
+/* Voice transcripts are readable independently of the attention taxonomy. */
+.view-tabs { display: flex; gap: 8px; margin: 20px 0 12px; }
+.view-tab { border: 1px solid var(--line); border-radius: 999px; padding: 10px 17px; color: var(--ink-2); background: var(--surface); font-weight: 650; }
+.view-tab.active { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+.voice-intro { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 12px; }
+.voice-intro p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.5; }
+.voice-note { grid-template-columns: 44px minmax(0, 1fr); }
+.voice-note .voice { background: var(--teal-soft); color: var(--teal); }
+.voice-transcript { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.75; margin: 16px 0; }
+.voice-placeholder { color: var(--muted); line-height: 1.6; margin: 14px 0; }
+.voice-state { color: var(--teal); font-weight: 600; }
+.voice-state.failed { color: #9b3824; }
+.voice-actions { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 12px; }
+.voice-actions a { text-decoration: none; }
+@media (prefers-color-scheme: dark) { .voice-state.failed { color: #ffac99; } }

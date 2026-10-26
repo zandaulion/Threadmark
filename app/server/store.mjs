@@ -5,6 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { detectAttention } from './detectors.mjs';
 import { evaluateRules, normaliseRule } from './rules.mjs';
 import { extractDueAt } from './dates.mjs';
+import { ensureVoiceSchema } from './voice.mjs';
 
 const now = () => new Date().toISOString();
 const DEFAULT_PROFILE_ID = 'personal';
@@ -134,12 +135,14 @@ export function openDatabase(dataDir) {
   }
   ensureSourceKinds(db);
   ensureProfileSchema(db);
+  ensureVoiceSchema(db);
   seedProfiles(db);
   seedDevRules(db);
   db.exec('CREATE INDEX IF NOT EXISTS groups_kind_idx ON groups(profile_id, kind, selected, name)');
   const unresolved = db.prepare(`SELECT id, name FROM groups
     WHERE kind='contact' AND selected=0 AND id LIKE '%@lid'
-    AND NOT EXISTS (SELECT 1 FROM messages WHERE messages.group_id=groups.id)`).all();
+    AND NOT EXISTS (SELECT 1 FROM messages WHERE messages.group_id=groups.id)
+    AND NOT EXISTS (SELECT 1 FROM voice_notes WHERE voice_notes.source_id=groups.id)`).all();
   const removeUnresolved = db.prepare("DELETE FROM groups WHERE id=? AND kind='contact' AND selected=0");
   for (const contact of unresolved) {
     if (/^Contact \d{6}$/u.test(contact.name)) removeUnresolved.run(contact.id);
@@ -321,6 +324,8 @@ export class ThreadmarkStore {
       contextAware: false,
       outgoingMonitoring: false,
       attachmentProcessing: false,
+      voiceTranscription: false,
+      voiceActionDetection: false,
       dailyDigest: false,
       digestTime: '19:00',
       timeZone: 'Europe/Bucharest',
@@ -338,6 +343,8 @@ export class ThreadmarkStore {
       contextAware: Boolean(input.contextAware),
       outgoingMonitoring: Boolean(input.outgoingMonitoring),
       attachmentProcessing: Boolean(input.attachmentProcessing),
+      voiceTranscription: Boolean(input.voiceTranscription),
+      voiceActionDetection: Boolean(input.voiceTranscription && input.voiceActionDetection),
       dailyDigest: Boolean(input.dailyDigest),
       digestTime,
       timeZone: validTimeZone(input.timeZone) ? String(input.timeZone) : current.timeZone,
@@ -360,6 +367,8 @@ export class ThreadmarkStore {
       gmailSources: this.db.prepare("SELECT id, name, kind FROM groups WHERE profile_id=? AND selected=1 AND kind IN ('gmail_label','gmail_sender')").all(profile),
       outgoingMonitoring: settings.outgoingMonitoring,
       attachmentProcessing: settings.attachmentProcessing,
+      voiceTranscription: settings.voiceTranscription,
+      voiceActionDetection: settings.voiceActionDetection,
     };
   }
 
@@ -707,6 +716,7 @@ export class ThreadmarkStore {
   prune(days) {
     const cutoff = new Date(Date.now() - days * 86_400_000).toISOString();
     this.db.prepare('DELETE FROM context_messages WHERE expires_at<=?').run(now());
+    this.db.prepare('DELETE FROM voice_notes WHERE created_at<?').run(cutoff);
     return this.db.prepare(`DELETE FROM messages WHERE created_at<? AND id NOT IN
       (SELECT message_id FROM attention_items WHERE status='open')`).run(cutoff).changes;
   }

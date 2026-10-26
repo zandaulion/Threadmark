@@ -5,7 +5,8 @@ RUN git clone --depth 1 --branch v1.9.4 https://github.com/ggml-org/whisper.cpp.
   && cmake --build /src/whisper.cpp/build --config Release -j2 \
   && cmake --install /src/whisper.cpp/build --prefix /opt/whisper \
   && mkdir -p /opt/whisper/models \
-  && /src/whisper.cpp/models/download-ggml-model.sh tiny /opt/whisper/models
+  && /src/whisper.cpp/models/download-ggml-model.sh small /opt/whisper/models \
+  && echo '1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b  /opt/whisper/models/ggml-small.bin' | sha256sum -c -
 
 FROM docker.io/library/node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1
 ENV NODE_ENV=production

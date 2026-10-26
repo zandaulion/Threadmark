@@ -4,7 +4,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { downloadMediaMessage } from '@whiskeysockets/baileys';
+import { downloadMediaMessage, proto } from '@whiskeysockets/baileys';
 
 const run = promisify(execFile);
 const MAX_MEDIA_BYTES = 20 * 1024 * 1024;
@@ -15,7 +15,30 @@ export async function processMessageMedia(message, socket, logger, options = {})
   if (Number(descriptor.fileLength || 0) > MAX_MEDIA_BYTES) return { ...descriptor.public, processed: false, error: 'attachment_too_large' };
   const directory = await fs.mkdtemp(path.join(options.tempDir || os.tmpdir(), 'threadmark-media-'));
   try {
-    const buffer = await downloadMediaMessage(message, 'buffer', {}, { logger, reuploadRequest: socket?.updateMediaMessage });
+    const download = options.download || downloadMediaMessage;
+    let stream;
+    let rejectDownload;
+    let abandoned = false;
+    // This Baileys version does not forward AbortSignal to its fetch call.
+    // Bound the caller's wait and close a stream that arrives after cancellation.
+    const cancelled = new Promise((_, reject) => { rejectDownload = reject; });
+    const abort = () => { abandoned = true; stream?.destroy(new Error('download_aborted')); rejectDownload(new Error('download_aborted')); };
+    const timer = setTimeout(abort, 60_000);
+    options.signal?.addEventListener('abort', abort, { once: true });
+    const chunks = [];
+    let size = 0;
+    try {
+      if (options.signal?.aborted) throw new Error('aborted');
+      const pending = download(message, 'stream', {}, { logger, reuploadRequest: socket?.updateMediaMessage })
+        .then((value) => { if (abandoned) value.destroy(); return value; });
+      stream = await Promise.race([pending, cancelled]);
+      for await (const chunk of stream) {
+        size += chunk.length;
+        if (size > MAX_MEDIA_BYTES) { stream.destroy(); return { ...descriptor.public, processed: false, error: 'attachment_too_large' }; }
+        chunks.push(chunk);
+      }
+    } finally { abandoned = true; stream?.destroy(); clearTimeout(timer); options.signal?.removeEventListener('abort', abort); }
+    const buffer = Buffer.concat(chunks);
     if (!Buffer.isBuffer(buffer) || buffer.length > MAX_MEDIA_BYTES) return { ...descriptor.public, processed: false, error: 'attachment_too_large' };
     const input = path.join(directory, `input${descriptor.extension}`);
     await fs.writeFile(input, buffer, { mode: 0o600 });
@@ -36,19 +59,54 @@ export async function processMessageMedia(message, socket, logger, options = {})
       return result(descriptor, stdout, 'ocr');
     }
     if (descriptor.kind === 'audio') {
+      const execute = options.run || run;
+      const execution = { signal: options.signal, killSignal: 'SIGKILL', maxBuffer: 2_000_000 };
       const wav = path.join(directory, 'audio.wav');
       const output = path.join(directory, crypto.randomUUID());
-      await run('ffmpeg', ['-nostdin', '-loglevel', 'error', '-i', input, '-ar', '16000', '-ac', '1', '-c:a', 'pcm_s16le', wav], { timeout: 60_000, maxBuffer: 200_000 });
-      await run('/opt/whisper/bin/whisper-cli', ['-m', '/opt/whisper/models/ggml-tiny.bin', '-f', wav, '-l', 'auto', '-nt', '-otxt', '-of', output], { timeout: 180_000, maxBuffer: 2_000_000 });
+      const probe = await execute('ffprobe', ['-v', 'error', '-protocol_whitelist', 'file,pipe', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', input], { ...execution, timeout: 15_000 });
+      const duration = Number(String(probe.stdout).trim());
+      if (!Number.isFinite(duration) || duration <= 0) return { ...descriptor.public, processed: false, error: 'local_processing_failed' };
+      if (duration > 600) return { ...descriptor.public, processed: false, error: 'audio_too_long' };
+      await execute('ffmpeg', ['-nostdin', '-loglevel', 'error', '-protocol_whitelist', 'file,pipe', '-i', input, '-t', '600', '-ar', '16000', '-ac', '1', '-c:a', 'pcm_s16le', wav], { ...execution, timeout: 60_000 });
+      const threads = String(Math.min(Math.max(Number(process.env.WHISPER_THREADS) || 2, 1), 4));
+      await execute('/opt/whisper/bin/whisper-cli', ['-m', process.env.WHISPER_MODEL || '/opt/whisper/models/ggml-small.bin', '-f', wav, '-l', 'auto', '-t', threads, '-nt', '-otxt', '-of', output],
+        { ...execution, timeout: Math.min(1_800_000, Math.max(180_000, Math.ceil(duration * 5000))) });
       return result(descriptor, await fs.readFile(`${output}.txt`, 'utf8'), 'whisper');
     }
     return { ...descriptor.public, processed: false, error: 'unsupported_attachment' };
   } catch (error) {
-    console.warn(`Local media processing failed (${descriptor.kind}): ${error?.code || error?.message || 'unknown error'}`);
+    console.warn(`Local media processing failed (${descriptor.kind}): ${error?.code || 'processing_failed'}`);
     return { ...descriptor.public, processed: false, error: 'local_processing_failed' };
   } finally {
     await fs.rm(directory, { recursive: true, force: true }).catch(() => {});
   }
+}
+
+export async function cleanupMediaTemp(directory) {
+  const entries = await fs.readdir(directory, { withFileTypes: true }).catch(() => []);
+  for (const entry of entries) {
+    if (entry.isDirectory() && /^threadmark-media-[a-z0-9]{6}$/iu.test(entry.name)) {
+      await fs.rm(path.join(directory, entry.name), { recursive: true, force: true });
+    }
+  }
+}
+
+export function serializeVoiceMessage(message) {
+  let content = message?.message || {};
+  for (let index = 0; index < 4; index += 1) {
+    if (content.viewOnceMessage || content.viewOnceMessageV2 || content.viewOnceMessageV2Extension) return null;
+    if (!content.ephemeralMessage?.message) break;
+    content = content.ephemeralMessage.message;
+  }
+  const audio = content.audioMessage;
+  if (!audio || audio.viewOnce) return null;
+  const { contextInfo, ...reference } = audio; // Never retain quoted messages for a retry.
+  return Buffer.from(proto.WebMessageInfo.encode({ key: message.key, messageTimestamp: message.messageTimestamp,
+    message: { audioMessage: reference } }).finish()).toString('base64');
+}
+
+export function deserializeVoiceMessage(encoded) {
+  return proto.WebMessageInfo.decode(Buffer.from(encoded, 'base64'));
 }
 
 export function describeMedia(content) {
@@ -70,7 +128,9 @@ export function describeMedia(content) {
 }
 
 function result(descriptor, text, processor) {
-  const extractedText = String(text || '').replace(/\s+/gu, ' ').trim().slice(0, 12_000);
+  const cleaned = String(text || '').replace(/\s+/gu, ' ').trim();
+  if (processor === 'whisper' && cleaned.length > 64_000) return { ...descriptor.public, processed: false, processor, error: 'transcript_too_long' };
+  const extractedText = processor === 'whisper' ? cleaned : cleaned.slice(0, 12_000);
   return { ...descriptor.public, processed: Boolean(extractedText), processor, extractedText, error: extractedText ? null : 'no_text_found' };
 }
 

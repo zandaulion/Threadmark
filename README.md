@@ -89,7 +89,7 @@ The two connectors and app run as separate rootless Podman containers on a priva
 - Optional context-aware correction/cancellation detection with a 48-hour local rolling buffer.
 - Optional outgoing-message monitoring that closes reply reminders when you answer.
 - Conservative payment warnings for changed details, changed amounts, possible duplicates and unusual credential/payment language.
-- Optional local image/PDF OCR and multilingual voice-note transcription with Tesseract, Poppler and whisper.cpp inside the bridge container.
+- Optional local image/PDF OCR and a separate **Voice messages** view with automatic multilingual transcription, background status and retry. Voice transcripts remain visible without an attention match; sending them through action detection is a separate opt-in. See [Voice messages](docs/VOICE_MESSAGES.md).
 - Source excerpts, confidence, group or person, sender and detected details.
 - Mark done/reopen data model, live updates through SSE, and automatic feed/counter reconciliation whenever the PWA returns to the foreground.
 - Optional Web Push notifications with supported-platform Done and Actions buttons.
@@ -253,14 +253,14 @@ The public/tailnet PWA route must never inject the admin token. Only the private
 - The app never receives raw encryption keys.
 - New group and individual-chat events are routed only between the local bridge and app containers.
 - Unselected message content is rejected before detection and long-term storage.
-- Selected messages with no detection are not retained.
+- Selected typed messages with no detection are not retained. With voice transcription enabled, transcripts are retained independently of detections under the normal retention setting.
 - Matched excerpts stay in the local SQLite database.
 - Custom rule and semantic-monitor definitions stay in that same local database. Phrase test samples are evaluated locally and are not saved.
 - When Jev is enabled, the text of an otherwise-unmatched message, a locally matched Gmail meeting candidate, or any local alert candidate from a selected source is sent to TypeSafe AI. Gmail candidates can be routed quietly to the local Promotional view by the narrow policy described below. Threadmark does not send the source name, sender name, email address, phone number, WhatsApp ID or message ID.
 - Jev receives only coarse channel context: Gmail or WhatsApp, group/individual/mailbox, and boolean Gmail bulk-mail hints such as Promotions category or the presence of `List-Unsubscribe`. Header values are not sent, and no single hint determines the result.
 - Context-aware changes/cancellations and reply monitoring are off by default. If enabled, selected-chat text and direction labels are held locally for at most 48 hours and recent text may be sent to Jev; identities and IDs are still removed.
 - Outgoing messages are ignored unless reply monitoring is explicitly enabled.
-- Attachment reading is off by default. If enabled, selected-chat media is downloaded and decrypted by the local bridge, processed inside the container, and deleted immediately. Only extracted text follows the same local/Jev routing rules as typed text.
+- Attachment reading and voice transcription are separate, disabled-by-default settings. Media is processed locally in temporary storage and deleted after each attempt. Image/PDF text follows normal detector routing. Voice transcripts enter the local Voice messages view; they reach the action/Jev pipeline only when **Find actions in transcripts** is also enabled. Temporary voice download references stay only in the bridge for retry, for up to 24 hours.
 - Jev test samples are sent to TypeSafe AI but are not saved by Threadmark. TypeSafe's own retention terms apply to all Jev requests.
 - API and internal responses are never cached by the service worker.
 - Message content is never intentionally written to logs.
@@ -269,6 +269,8 @@ The public/tailnet PWA route must never inject the admin token. Only the private
 Back up the app, bridge and both Gmail data directories together with the environment file, using encryption. Treat every connector directory, the environment file and `BRIDGE_TOKEN` as account credentials.
 
 ## Jev semantic detection
+
+See the [CPU model assessment and synthetic evaluation harness](docs/SEMANTIC_MODELS.md) for the Laya, Kev and SemIf replacement investigation.
 
 Threadmark always runs its deterministic detectors and local phrase rules first. Concrete Romanian or English invoice notices are stored locally as Payment items even when the message contains no amount or IBAN. When Jev is enabled, the app batches independent invoice, payment, meeting, reminder, urgency, promotional, personal-obligation, transactional and recipient-specific Noul questions with any applicable semantic-monitor questions. If the local layer found nothing, a matching custom monitor takes precedence; otherwise a positive invoice judgment becomes a Payment item at `JEV_INVOICE_THRESHOLD` (default `0.68`) and the strongest generic built-in result uses `JEV_THRESHOLD` (default `0.78`). The lower invoice threshold reflects the higher cost of missing a bill, while the narrow question explicitly excludes marketing and hypothetical invoicing content.
 

@@ -25,6 +25,7 @@ export function normalizeMessage(message, groupName = '', resolvedContactId = ''
     text: text || `[${media.kind === 'audio' ? 'Voice note' : 'Attachment'}]`,
     direction: message.key.fromMe ? 'outgoing' : 'incoming',
     media,
+    ...(media?.kind === 'audio' ? { durationSeconds: Number(content.audioMessage.seconds) || null } : {}),
     ...(sourceKind === 'group' && !message.key.fromMe ? addressing(content, selfIds, text, selfName) : {}),
   };
 }

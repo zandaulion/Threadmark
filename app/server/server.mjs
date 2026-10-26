@@ -9,6 +9,7 @@ import { JevDetector } from './jev.mjs';
 import { PushService } from './push.mjs';
 import { openDatabase, ThreadmarkStore } from './store.mjs';
 import { normaliseRule, testRule } from './rules.mjs';
+import { VoiceStore } from './voice.mjs';
 
 const CONTENT_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -40,6 +41,8 @@ export function createThreadmarkServer(options = {}) {
   const ownsDb = !options.db;
   const db = options.db || openDatabase(config.dataDir);
   const store = options.store || new ThreadmarkStore(db);
+  const voices = new VoiceStore(db, store);
+  voices.cancelInactive();
   const auth = options.auth || new AuthStore(db, { publicBaseUrl: config.publicBaseUrl });
   const push = options.push || new PushService(config, store);
   const jev = options.jev || new JevDetector(config);
@@ -129,11 +132,23 @@ export function createThreadmarkServer(options = {}) {
           broadcast('gmail-sources', { profileId, sources });
           return json(res, 200, { accepted: sources.length });
         }
+        if (pathname === '/internal/voice-notes' && req.method === 'POST') {
+          const note = voices.record(await readJson(req, 512_000));
+          if (note) broadcast('voice', { id: note.id, profile: note.profile, status: note.status });
+          return json(res, 200, { accepted: Boolean(note) });
+        }
         if (pathname === '/internal/events' && req.method === 'POST') {
           const body = await readJson(req, 128_000);
           const selection = store.isSelectedMessage(body);
           if (!selection.source || !selection.selected) return json(res, 200, store.ingestMessage(body));
           const settings = store.settings();
+          const voice = body.origin === 'voice_transcript' ? voices.get(body.id) : null;
+          if ((body.media?.kind === 'audio' || body.origin === 'voice_transcript') && (body.origin !== 'voice_transcript'
+            || !settings.voiceTranscription || !settings.voiceActionDetection
+            || voice?.status !== 'ready' || voice.source.id !== body.sourceId || voice.attempt !== body.voiceAttempt
+            || String(body.text || '') !== voice.transcript.slice(0, 12_000))) {
+            return json(res, 200, { accepted: false, reason: 'voice_actions_disabled' });
+          }
           if (body.direction === 'outgoing') {
             if (!settings.outgoingMonitoring) return json(res, 200, { accepted: false, reason: 'outgoing_disabled', sourceKind: selection.source.kind });
             store.recordContextMessage(body);
@@ -148,7 +163,9 @@ export function createThreadmarkServer(options = {}) {
           const verifyPayment = localDetections.some((detection) => detection.type === 'payment'
             && !detection.details?.invoice && !detection.details?.subscription
             && !detection.details?.ruleId && !detection.details?.monitorId);
-          const context = settings.contextAware || settings.outgoingMonitoring ? store.recentContext(body) : [];
+          // A transcript can arrive after newer typed messages. Analyze it on its
+          // own rather than letting delayed speech overwrite newer conversation state.
+          const context = !voice && (settings.contextAware || settings.outgoingMonitoring) ? store.recentContext(body) : [];
           const semanticRules = store.applicableSemanticRules(body);
           const attentionShadow = Boolean(jev.status()?.enabled && localDetections.length);
           const shouldUseJev = (!informationalReceipt && (!localDetections.length || verifyGmailMeeting || verifyPayment))
@@ -157,8 +174,8 @@ export function createThreadmarkServer(options = {}) {
             includeBuiltIns: !informationalReceipt && (!localDetections.length || verifyGmailMeeting),
             verifyPayment,
             attentionSignals: true,
-            contextAware: settings.contextAware,
-            replyNeeded: settings.outgoingMonitoring,
+            contextAware: !voice && settings.contextAware,
+            replyNeeded: !voice && settings.outgoingMonitoring,
             paymentSafety: !informationalReceipt,
             extractDate: !informationalReceipt || Boolean(semanticRules.length),
             referenceAt: body.sentAt,
@@ -189,7 +206,7 @@ export function createThreadmarkServer(options = {}) {
             detections = detections.filter((item) => !(item.type === 'reminder' && item.details?.detector === 'jev' && !item.details?.monitorId));
           }
           const replyIsForUser = !addressedElsewhere && (!largeGroup || body.addressedToMe !== false);
-          if (replyIsForUser && analysis.signals?.replyNeeded >= 0.82 && !detections.some((item) => item.type === 'reminder')) {
+          if (!voice && replyIsForUser && analysis.signals?.replyNeeded >= 0.82 && !detections.some((item) => item.type === 'reminder')) {
             const dueAt = new Date(new Date(body.sentAt || Date.now()).valueOf() + settings.replyDelayHours * 3_600_000).toISOString();
             detections.push({
               type: 'reminder', key: 'jev-reply-needed', title: 'Reply requested', confidence: analysis.signals.replyNeeded,
@@ -203,8 +220,8 @@ export function createThreadmarkServer(options = {}) {
               detection.priority = Math.max(Number(detection.priority) || 0, analysis.signals.suspiciousPayment);
             }
           }
-          const contextUpdates = settings.contextAware ? store.applyContextSignals(body, analysis) : [];
-          if (analysis.signals?.cancelsPrevious >= 0.86 || analysis.signals?.changesPrevious >= 0.82) detections = [];
+          const contextUpdates = !voice && settings.contextAware ? store.applyContextSignals(body, analysis) : [];
+          if (!voice && (analysis.signals?.cancelsPrevious >= 0.86 || analysis.signals?.changesPrevious >= 0.82)) detections = [];
           if (!detections.length && selection.source.kind === 'contact' && body.media?.kind === 'image') {
             detections.push({
               type: 'reminder', key: 'contact-photo-review', title: 'Photo needs review', confidence: 1,
@@ -251,7 +268,9 @@ export function createThreadmarkServer(options = {}) {
         if (pathname === '/api/settings' && req.method === 'GET') return json(res, 200, store.settings());
         if (pathname === '/api/settings' && req.method === 'PUT') {
           const settings = store.updateSettings(await readJson(req));
+          voices.cancelInactive();
           broadcast('settings', settings);
+          broadcast('voice', { profile: { id: 'personal' } });
           return json(res, 200, settings);
         }
         if (pathname === '/api/detection/status' && req.method === 'GET') return json(res, 200, jev.status());
@@ -259,6 +278,17 @@ export function createThreadmarkServer(options = {}) {
           const body = await readJson(req);
           const result = await jev.evaluate(body.text);
           return json(res, result.enabled && result.available ? 200 : 503, result);
+        }
+        if (pathname === '/api/voice-notes' && req.method === 'GET') return json(res, 200, { notes: voices.list(profileId) });
+        const voiceRetry = pathname.match(/^\/api\/voice-notes\/([^/]+)\/retry$/u);
+        if (voiceRetry && req.method === 'POST') {
+          const note = voices.get(decodeURIComponent(voiceRetry[1]), profileId);
+          if (!note) return json(res, 404, { error: 'not_found' });
+          if (!note.retryable) return json(res, 409, { error: 'voice_retry_unavailable' });
+          return proxyJson(res, `${config.bridgeControlUrl}/voice/retry`, 'POST', { id: note.id }, config.bridgeToken, null, (payload) => {
+            const updated = voices.record(payload);
+            if (updated) broadcast('voice', { id: updated.id, profile: updated.profile, status: updated.status });
+          });
         }
         if (pathname === '/api/feed' && req.method === 'GET') {
           const status = ['open', 'snoozed', 'promotional', 'done', 'all'].includes(url.searchParams.get('status')) ? url.searchParams.get('status') : 'open';
@@ -333,6 +363,8 @@ export function createThreadmarkServer(options = {}) {
           const body = await readJson(req);
           const id = decodeURIComponent(groupSelection[1]);
           const changed = store.selectGroup(id, Boolean(body.selected));
+          voices.cancelInactive();
+          broadcast('voice', { profile: { id: 'personal' } });
           if (changed) broadcast('groups', store.listGroups());
           return json(res, changed ? 200 : 404, changed ? { ok: true } : { error: 'not_found' });
         }
@@ -341,6 +373,8 @@ export function createThreadmarkServer(options = {}) {
           const body = await readJson(req);
           const id = decodeURIComponent(contactSelection[1]);
           const changed = store.selectContact(id, Boolean(body.selected));
+          voices.cancelInactive();
+          broadcast('voice', { profile: { id: 'personal' } });
           if (changed) broadcast('contacts', store.listContacts());
           return json(res, changed ? 200 : 404, changed ? { ok: true } : { error: 'not_found' });
         }

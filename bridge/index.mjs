@@ -2,12 +2,14 @@ import http from 'node:http';
 import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
+import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import makeWASocket, { DisconnectReason, useMultiFileAuthState } from '@whiskeysockets/baileys';
 import QRCode from 'qrcode';
 import { Outbox } from './outbox.mjs';
 import { normalizeContacts, normalizeGroups, normalizeMessage, resolveContactSourceId } from './normalize.mjs';
-import { processMessageMedia } from './media.mjs';
+import { processMessageMedia, serializeVoiceMessage, deserializeVoiceMessage, cleanupMediaTemp } from './media.mjs';
+import { VoiceJobs, VoiceWorker } from './voice.mjs';
 
 // libsignal prints whole session records, private ratchet keys included, through
 // console.info/warn. Keep its one-line notices and drop the objects.
@@ -23,6 +25,10 @@ const bridgeToken = process.env.BRIDGE_TOKEN || '';
 const host = process.env.HOST || '127.0.0.1';
 const port = Number(process.env.PORT || 4392);
 fs.mkdirSync(authDir, { recursive: true, mode: 0o700 });
+const mediaTempDir = path.join(os.tmpdir(), 'threadmark-voice');
+fs.mkdirSync(mediaTempDir, { recursive: true, mode: 0o700 });
+await cleanupMediaTemp(mediaTempDir);
+await cleanupMediaTemp(dataDir); // Remove staging left by older bridge versions after a crash.
 
 const outbox = new Outbox(dataDir);
 const logger = createLogger();
@@ -34,8 +40,14 @@ let reconnectTimer = null;
 let delivering = false;
 const groupNames = new Map();
 const lidToPhone = new Map();
-let routing = { loaded: false, sourceIds: new Set(), outgoingMonitoring: false, attachmentProcessing: false };
+let routing = { loaded: false, sourceIds: new Set(), outgoingMonitoring: false, attachmentProcessing: false, voiceTranscription: false, voiceActionDetection: false };
 let routingRefreshedAt = 0;
+const voiceJobs = new VoiceJobs(outbox);
+const voiceWorker = new VoiceWorker(voiceJobs, {
+  getRouting: async () => socket && stateName === 'connected' ? refreshRouting() : null,
+  transcribe: (encoded, signal) => processMessageMedia(deserializeVoiceMessage(encoded), socket, logger, { tempDir: mediaTempDir, signal }),
+  onUpdate: () => { void deliver(); },
+});
 
 async function connect() {
   clearTimeout(reconnectTimer);
@@ -122,8 +134,17 @@ async function connect() {
         normalized.text = '';
         normalized.media = null;
       }
+      if (normalized.direction === 'incoming' && normalized.media?.kind === 'audio') {
+        if (routing.voiceTranscription && routing.sourceIds.has(normalized.sourceId)) {
+          const reference = serializeVoiceMessage(message);
+          if (reference) voiceJobs.enqueue(normalized, reference);
+          void voiceWorker.kick();
+          void deliver();
+        }
+        continue;
+      }
       if (normalized.direction === 'incoming' && routing.attachmentProcessing && routing.sourceIds.has(normalized.sourceId) && normalized.media) {
-        const processed = await processMessageMedia(message, socket, logger, { tempDir: dataDir });
+        const processed = await processMessageMedia(message, socket, logger, { tempDir: mediaTempDir });
         if (processed) {
           normalized.media = processed;
           if (processed.extractedText) {
@@ -147,7 +168,7 @@ async function refreshRouting() {
     const response = await fetch(`${appUrl}/internal/routing`, {
       headers: { 'x-bridge-token': bridgeToken }, signal: AbortSignal.timeout(5000),
     });
-    if (!response.ok) return;
+    if (!response.ok) return null;
     const payload = await response.json();
     routingRefreshedAt = Date.now();
     routing = {
@@ -155,8 +176,12 @@ async function refreshRouting() {
       sourceIds: new Set(Array.isArray(payload.sourceIds) ? payload.sourceIds : []),
       outgoingMonitoring: Boolean(payload.outgoingMonitoring),
       attachmentProcessing: Boolean(payload.attachmentProcessing),
+      voiceTranscription: Boolean(payload.voiceTranscription),
+      voiceActionDetection: Boolean(payload.voiceActionDetection),
     };
-  } catch {}
+    voiceWorker.reconcile(routing);
+    return routing;
+  } catch { return null; }
 }
 
 function lidUser(jid) {
@@ -185,6 +210,15 @@ async function deliver() {
   try {
     for (const event of outbox.pending()) {
       try {
+        if (event.endpoint === '/internal/voice-notes' || event.payload.origin === 'voice_transcript') {
+          const fresh = await refreshRouting();
+          if (!fresh) break;
+          if (!fresh.voiceTranscription || !fresh.sourceIds.has(event.payload.sourceId)
+            || (event.payload.origin === 'voice_transcript' && !fresh.voiceActionDetection)) {
+            outbox.delivered(event.id);
+            continue;
+          }
+        }
         const response = await fetch(`${appUrl}${event.endpoint}`, {
           method: 'POST',
           headers: { 'content-type': 'application/json', 'x-bridge-token': bridgeToken },
@@ -206,6 +240,20 @@ const control = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://local.invalid');
   if (url.pathname === '/health' && req.method === 'GET') return sendJson(res, 200, { status: 'ok', connection: stateName });
   if (url.pathname === '/status' && req.method === 'GET') return sendJson(res, 200, { connection: stateName, account, qrAvailable: Boolean(qr) });
+  if (url.pathname === '/voice/retry' && req.method === 'POST') {
+    try {
+      const body = await readJson(req);
+      const fresh = await refreshRouting();
+      const job = voiceJobs.get(String(body.id || ''));
+      const source = job ? JSON.parse(job.message_json).sourceId : null;
+      if (!fresh?.voiceTranscription || !fresh.sourceIds.has(source)) return sendJson(res, 409, { error: 'voice_disabled' });
+      const event = voiceJobs.retry(String(body.id || ''));
+      if (!event) return sendJson(res, 410, { error: 'voice_retry_unavailable' });
+      void voiceWorker.kick();
+      void deliver();
+      return sendJson(res, 200, event);
+    } catch { return sendJson(res, 400, { error: 'invalid_request' }); }
+  }
   if (url.pathname === '/qr.svg' && req.method === 'GET') {
     if (!qr) return sendJson(res, 404, { error: 'qr_unavailable' });
     const svg = await QRCode.toString(qr, { type: 'svg', margin: 2, width: 320, color: { dark: '#111827', light: '#ffffff' } });
@@ -262,9 +310,10 @@ const control = http.createServer(async (req, res) => {
 });
 
 control.listen(port, host, () => console.log(`Threadmark bridge control listening on http://${host}:${port}`));
-setInterval(() => void deliver(), 2000).unref();
-setInterval(queueStatus, 30_000).unref();
-setInterval(() => void refreshRouting(), 15_000).unref();
+const deliveryTimer = setInterval(() => void deliver(), 2000);
+const statusTimer = setInterval(queueStatus, 30_000);
+const routingTimer = setInterval(() => { void refreshRouting(); void voiceWorker.kick(); }, 15_000);
+for (const timer of [deliveryTimer, statusTimer, routingTimer]) timer.unref();
 void connect().catch((error) => {
   console.error(`WhatsApp connection failed: ${error.message}`);
   reconnectTimer = setTimeout(() => void connect(), 5000);
@@ -297,8 +346,10 @@ function constantTime(candidate, expected) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
-const shutdown = () => {
+const shutdown = async () => {
   clearTimeout(reconnectTimer);
+  for (const timer of [deliveryTimer, statusTimer, routingTimer]) clearInterval(timer);
+  await voiceWorker.close();
   try { socket?.end?.(new Error('shutdown')); } catch {}
   control.close(() => { outbox.close(); process.exit(0); });
 };
