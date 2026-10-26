@@ -206,3 +206,7 @@ Reload once. If it remains stale, visit `/bust`, then reopen Threadmark; this cl
 
 **WhatsApp is offline**
 Open **Connect**. If the account was logged out, pair it again. An ordinary network interruption should reconnect automatically.
+
+If WhatsApp rejects phone-number pairing, open Threadmark on another screen, choose **Connect → QR code**, then scan it from your phone's **WhatsApp → Linked devices → Link a device**. A displayed code is now returned only after WhatsApp confirms the request; a rejected request shows an explanation instead. Errors are displayed as ordinary text, and duplicate submissions are disabled while requesting a code.
+
+The pinned Baileys connector needs a local compatibility handler for registration-secret refreshes, following [upstream PR #2765](https://github.com/WhiskeySockets/Baileys/pull/2765). It refreshes the current QR without consuming another reference and leaves registered or pending phone-code sessions intact. See also [upstream pairing issue #2737](https://github.com/WhiskeySockets/Baileys/issues/2737). Completed linking must still be checked on a real phone; synthetic tests cover protocol response handling, not WhatsApp acceptance of a device.

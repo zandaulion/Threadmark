@@ -10,6 +10,7 @@ import { Outbox } from './outbox.mjs';
 import { normalizeContacts, normalizeGroups, normalizeMessage, resolveContactSourceId } from './normalize.mjs';
 import { processMessageMedia, serializeVoiceMessage, deserializeVoiceMessage, cleanupMediaTemp } from './media.mjs';
 import { VoiceJobs, VoiceWorker } from './voice.mjs';
+import { installPairingRefresh, requestConfirmedPairingCode } from './pairing.mjs';
 
 // libsignal prints whole session records, private ratchet keys included, through
 // console.info/warn. Keep its one-line notices and drop the objects.
@@ -53,6 +54,13 @@ async function connect() {
   clearTimeout(reconnectTimer);
   stateName = 'connecting';
   const { state, saveCreds } = await useMultiFileAuthState(authDir);
+  // An unfinished phone-code attempt sets me before registration succeeds.
+  // Reusing it as a login on restart leads to a logged-out socket with no QR.
+  if (!state.creds.registered && !state.creds.account && state.creds.me) {
+    delete state.creds.me;
+    delete state.creds.pairingCode;
+    await saveCreds();
+  }
   socket = makeWASocket({
     auth: state,
     logger,
@@ -62,6 +70,7 @@ async function connect() {
     generateHighQualityLinkPreview: false,
     getMessage: async () => undefined,
   });
+  installPairingRefresh(socket);
   socket.ev.on('creds.update', saveCreds);
   socket.ev.on('connection.update', async (update) => {
     if (update.qr) {
@@ -265,11 +274,13 @@ const control = http.createServer(async (req, res) => {
       const body = await readJson(req);
       const phoneNumber = String(body.phoneNumber || '').replace(/\D/g, '');
       if (!socket || phoneNumber.length < 8 || phoneNumber.length > 15) return sendJson(res, 400, { error: 'invalid_request' });
-      const code = await socket.requestPairingCode(phoneNumber);
+      if (stateName !== 'pairing' || !socket.ws.isOpen) return sendJson(res, 409, { error: 'pairing_not_ready' });
+      const code = await requestConfirmedPairingCode(socket, phoneNumber);
       return sendJson(res, 200, { code });
     } catch (error) {
-      console.error(`Pairing failed: ${error.message}`);
-      return sendJson(res, 503, { error: 'pairing_failed' });
+      const code = Number(error?.data || error?.output?.statusCode);
+      console.error(`Pairing failed (status ${Number.isInteger(code) ? code : 'unconfirmed'})`);
+      return sendJson(res, 503, { error: code === 400 ? 'pairing_rejected' : 'pairing_failed' });
     }
   }
   if (url.pathname === '/contact-lookup' && req.method === 'POST') {

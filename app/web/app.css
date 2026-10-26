@@ -256,6 +256,7 @@ input:focus, select:focus, textarea:focus { border-color: var(--teal); box-shado
 .qr-frame img { width: 100%; height: 100%; object-fit: contain; }
 .steps { max-width: 310px; margin: 18px auto; padding-left: 24px; text-align: left; color: var(--muted); line-height: 1.65; }
 .pairing-code { display: block; min-height: 56px; margin: 18px 0; font-family: ui-monospace, monospace; font-size: 2rem; font-weight: 850; letter-spacing: .15em; color: var(--teal); }
+.pairing-code.error { font-family: inherit; font-size: 1rem; font-weight: 500; letter-spacing: normal; line-height: 1.5; }
 .warning-note { margin: 20px 0 0; padding: 13px; border-radius: 12px; background: #f2c14e20; color: #6c5520; font-size: .78rem; line-height: 1.45; }
 #pair-connected { text-align: center; padding: 28px 0; }
 .connected-seal { width: 66px; height: 66px; display: grid; place-items: center; margin: 0 auto 16px; border-radius: 50%; background: var(--teal-soft); color: var(--teal); font-size: 1.8rem; font-weight: 900; }

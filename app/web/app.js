@@ -1022,11 +1022,14 @@ $('#pair-code-form').addEventListener('submit', async (event) => {
   event.preventDefault();
   state.busy = true;
   $('#pairing-code').textContent = '…';
+  $('#pairing-code').classList.remove('error');
+  const button = event.currentTarget.querySelector('button[type="submit"]');
+  button.disabled = true;
   try {
     const result = await api('/api/whatsapp/pairing-code', { method: 'POST', body: JSON.stringify({ phoneNumber: $('#phone-number').value }) });
     $('#pairing-code').textContent = String(result.code || '').match(/.{1,4}/g)?.join(' ') || result.code;
-  } catch (error) { $('#pairing-code').textContent = error.message; }
-  finally { state.busy = false; }
+  } catch (error) { $('#pairing-code').textContent = error.message; $('#pairing-code').classList.add('error'); }
+  finally { state.busy = false; button.disabled = false; }
 });
 
 $('#alerts-button').addEventListener('click', enableAlerts);
@@ -1230,6 +1233,9 @@ function itemActions(item) {
 }
 
 function readableError(code) {
+  if (code === 'pairing_not_ready') return 'WhatsApp is reconnecting. Wait for Pairing, then request a new code.';
+  if (code === 'pairing_rejected') return 'WhatsApp rejected phone-number pairing. Open Threadmark on another screen and scan its QR code from Linked devices.';
+  if (code === 'pairing_failed') return 'WhatsApp did not confirm the code. Try again, or use the QR code from another screen.';
   if (code === 'voice_retry_unavailable') return 'This recording can no longer be retried. Open the original in WhatsApp.';
   if (code === 'voice_disabled') return 'Enable voice transcription and select this chat before retrying.';
   return ({ invalid_invite: 'That invitation is invalid, expired or already used.', throttled: 'Too many attempts. Try again later.', bridge_unavailable: 'The WhatsApp bridge is not available yet.', contact_not_found: 'That number is not registered on WhatsApp.', contact_lookup_failed: 'WhatsApp could not look up that number.', invalid_phone_number: 'Enter a full phone number including country code.', jev_not_configured: 'Jev is not configured on the server yet.', jev_unavailable: 'Jev is temporarily unavailable. Local detection is still active.' })[code];
