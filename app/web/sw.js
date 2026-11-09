@@ -48,39 +48,89 @@ self.addEventListener('push', (event) => {
 });
 
 async function showPush(data) {
+  if (data.type === 'dismiss') return dismissAlerts(data);
   if (!data.itemId || typeof self.registration.getNotifications !== 'function') return showSingle(data, data.tag);
+  if ((await dismissedIds([data])).includes(data.itemId)) return;
   const tag = `threadmark-alerts-${data.profileId || 'personal'}`;
   const [current] = await self.registration.getNotifications({ tag });
   const previous = Array.isArray(current?.data?.alerts) ? current.data.alerts : [];
-  const alert = { itemId: data.itemId, category: data.category, urgent: Boolean(data.urgent), line: data.body };
+  const alert = { ...data, line: data.body };
   const alerts = [...previous.filter((entry) => entry.itemId !== data.itemId), alert].slice(-MAX_TRACKED_ALERTS);
-  if (alerts.length === 1) return showSingle(data, tag, alerts);
-  const prefix = data.profileId && data.profileId !== 'personal' ? `${data.profileName || data.profileId} · ` : '';
+  return renderAlerts(alerts, data);
+}
+
+async function dismissedIds(alerts) {
+  try {
+    const response = await fetch('/api/notifications/state', {
+      method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ alerts: alerts.map(({ itemId, issuedAt }) => ({ itemId, issuedAt })) }),
+      signal: globalThis.AbortSignal?.timeout(4000),
+    });
+    if (!response.ok) return [];
+    const payload = await response.json();
+    return Array.isArray(payload.dismissedIds) ? payload.dismissedIds : [];
+  } catch { return []; }
+}
+
+async function dismissAlerts(data) {
+  if (!Array.isArray(data.itemIds) || typeof self.registration.getNotifications !== 'function') return;
+  const tag = `threadmark-alerts-${data.profileId || 'personal'}`;
+  for (const current of await self.registration.getNotifications()) {
+    const profileId = current.data?.profileId || (current.tag === tag || current.tag?.startsWith(`${data.profileId || 'personal'}:`)
+      ? data.profileId || 'personal' : null);
+    if (profileId !== (data.profileId || 'personal')) continue;
+    const alerts = Array.isArray(current.data?.alerts) ? current.data.alerts : current.data?.itemId ? [current.data] : [];
+    const remaining = alerts.filter((entry) => !data.itemIds.includes(entry.itemId)
+      || (data.dismissedAt && entry.issuedAt && entry.issuedAt > data.dismissedAt));
+    if (remaining.length === alerts.length) continue;
+    if (!remaining.length) current.close();
+    else await renderAlerts(remaining, { ...current.data, profileId }, true);
+  }
+}
+
+async function renderAlerts(alerts, data, quiet = false) {
+  const profileId = data.profileId || 'personal';
+  const tag = `threadmark-alerts-${profileId}`;
+  const metadata = { profileId, profileName: data.profileName, profileUrl: data.profileUrl || data.url || '/' };
+  if (alerts.length === 1) {
+    const entry = alerts[0];
+    return showSingle({ ...metadata, ...entry, title: entry.title || 'Threadmark alert', body: entry.line || entry.body,
+      url: entry.url || `${metadata.profileUrl}#item=${encodeURIComponent(entry.itemId)}`,
+      actionsUrl: entry.actionsUrl || `${metadata.profileUrl}#item=${encodeURIComponent(entry.itemId)}&actions=1`,
+      actions: entry.actions || [{ action: 'done', title: 'Done' }, { action: 'actions', title: 'Actions' }],
+    }, tag, alerts, quiet);
+  }
+  const prefix = profileId !== 'personal' ? `${data.profileName || profileId} · ` : '';
   const urgent = alerts.some((entry) => entry.urgent) ? 'Urgent · ' : '';
-  const recent = alerts.slice(-3).reverse().map((entry) => entry.line);
+  const recent = alerts.slice(-3).reverse().map((entry) => entry.line || entry.body);
   const more = alerts.length > recent.length ? `\n+${alerts.length - recent.length} more` : '';
   const kinds = breakdown(alerts);
   return self.registration.showNotification(`${prefix}${urgent}${alerts.length} alerts${kinds ? ` · ${kinds}` : ''}`, {
     body: `${recent.join('\n')}${more}`,
-    icon: data.icon || '/icons/icon-192.png',
-    badge: data.badge || '/icons/icon-192.png',
-    tag,
-    renotify: true,
-    data: { url: data.profileUrl || '/', alerts },
+    icon: data.icon || '/icons/icon-192.png', badge: data.badge || '/icons/icon-192.png', tag,
+    ...(quiet ? { silent: true, renotify: false } : { renotify: true }),
+    data: { ...metadata, url: metadata.profileUrl, alerts },
   });
 }
 
-function showSingle(data, tag, alerts) {
+function showSingle(data, tag, alerts, quiet = false) {
   return self.registration.showNotification(data.title, {
-    body: data.body,
-    icon: data.icon || '/icons/icon-192.png',
-    badge: data.badge || '/icons/icon-192.png',
-    tag,
-    ...(alerts ? { renotify: true } : {}),
+    body: data.body, icon: data.icon || '/icons/icon-192.png', badge: data.badge || '/icons/icon-192.png', tag,
+    ...(quiet ? { silent: true, renotify: false } : alerts ? { renotify: true } : {}),
     actions: Array.isArray(data.actions) ? data.actions.slice(0, 2) : [],
-    data: { url: data.url, actionsUrl: data.actionsUrl, itemId: data.itemId, ...(alerts ? { alerts } : {}) },
+    data: { ...data, ...(alerts ? { alerts } : {}) },
   });
 }
+
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'notification-capabilities') {
+    event.ports?.[0]?.postMessage({ dismiss: true });
+    return;
+  }
+  if (event.data?.type !== 'dismiss') return;
+  pushQueue = pushQueue.then(() => dismissAlerts(event.data)).catch(() => {});
+  event.waitUntil(pushQueue);
+});
 
 function breakdown(alerts) {
   const counts = {};
@@ -90,26 +140,37 @@ function breakdown(alerts) {
 }
 
 self.addEventListener('notificationclick', (event) => {
-  event.notification.close();
-  event.waitUntil((async () => {
-    const data = event.notification.data || {};
-    const fallback = new URL(data.url || '/', self.location.origin).href;
-    if (event.action === 'done' && data.itemId) {
+  const data = event.notification.data || {};
+  if (event.action === 'done' && data.itemId) {
+    // Keep completion in the worker: no window focus/navigation on success or
+    // failure. Android/Chrome still own whether the system shade collapses.
+    pushQueue = pushQueue.then(async () => {
       try {
         const response = await fetch(`/api/items/${encodeURIComponent(data.itemId)}/status`, {
-          method: 'POST',
-          credentials: 'same-origin',
-          headers: { 'content-type': 'application/json' },
+          method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ status: 'done' }),
         });
-        if (response.ok) return;
-      } catch {}
-      return focusOrOpen(fallback);
-    }
-    const target = event.action === 'actions'
-      ? new URL(data.actionsUrl || data.url || '/', self.location.origin).href
-      : fallback;
-    return focusOrOpen(target);
+        if (!response.ok) throw new Error('completion_failed');
+        await dismissAlerts({ type: 'dismiss', profileId: data.profileId || 'personal', itemIds: [data.itemId] });
+        if (typeof self.registration.getNotifications !== 'function') event.notification.close();
+      } catch {
+        // Some browsers remove the clicked notification before dispatch. Restore
+        // it quietly so a failed request remains actionable without opening the app.
+        const current = typeof self.registration.getNotifications === 'function'
+          ? await self.registration.getNotifications({ tag: event.notification.tag }) : [];
+        if (!current.length) await showSingle({ ...data, title: event.notification.title || 'Threadmark',
+          body: 'Could not mark done. Check your connection and try Done again.',
+          actions: [{ action: 'done', title: 'Done' }, { action: 'actions', title: 'Actions' }],
+        }, event.notification.tag || data.tag, data.alerts, true);
+      }
+    }).catch(() => {});
+    event.waitUntil(pushQueue);
+    return;
+  }
+  event.notification.close();
+  event.waitUntil((async () => {
+    const target = event.action === 'actions' ? data.actionsUrl || data.url || '/' : data.url || '/';
+    return focusOrOpen(new URL(target, self.location.origin).href);
   })());
 });
 

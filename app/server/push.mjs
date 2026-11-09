@@ -21,6 +21,28 @@ export class PushService {
     }));
   }
 
+  async dismissItems(payload) {
+    if (!this.enabled || !payload.itemIds?.length) return;
+    const batches = [];
+    let ids = [];
+    for (const id of payload.itemIds) {
+      if (ids.length && Buffer.byteLength(JSON.stringify({ ...payload, itemIds: [...ids, id] })) > 3500) {
+        batches.push(JSON.stringify({ ...payload, itemIds: ids }));
+        ids = [];
+      }
+      ids.push(id);
+    }
+    if (ids.length) batches.push(JSON.stringify({ ...payload, itemIds: ids }));
+    // Older workers would render this control message as a new generic alert.
+    await Promise.allSettled(this.store.subscriptions().filter(({ subscription }) => subscription.threadmarkDismissal === true).map(async ({ endpoint, subscription }) => {
+      try {
+        for (const batch of batches) await webpush.sendNotification(subscription, batch, { TTL: 3600, urgency: 'normal' });
+      } catch (error) {
+        if (error?.statusCode === 404 || error?.statusCode === 410) this.store.removeSubscription(endpoint);
+      }
+    }));
+  }
+
   async notifyDigest(summary, profile = { id: 'personal', name: 'Personal' }) {
     if (!this.enabled || !summary?.open) return;
     const payload = JSON.stringify({
@@ -46,6 +68,7 @@ export function notificationPayload(item) {
   const prefix = profileId === 'personal' ? '' : `${profileName} · `;
   const profilePath = profileId === 'personal' ? '/' : `/?profile=${encodeURIComponent(profileId)}`;
   return {
+    issuedAt: new Date().toISOString(),
     title: `${prefix}${urgent ? `Urgent · ${baseTitle}` : baseTitle}`,
     body: `${item.source?.name || item.group.name}: ${item.title}`,
     url: `${profilePath}#item=${encodeURIComponent(item.id)}`,

@@ -7,6 +7,7 @@ export function normalizeMessage(message, groupName = '', resolvedContactId = ''
   const sourceKind = sourceId?.endsWith('@g.us') ? 'group' : isContactId(sourceId) ? 'contact' : null;
   if (!id || !sourceKind) return null;
   const content = unwrap(message.message);
+  const quotedId = Object.values(content || {}).find((value) => value?.contextInfo)?.contextInfo?.stanzaId;
   const text = extractText(content).trim();
   const media = mediaMetadata(content);
   if (!text && !media) return null;
@@ -24,6 +25,7 @@ export function normalizeMessage(message, groupName = '', resolvedContactId = ''
     sentAt: new Date(timestamp * 1000).toISOString(),
     text: text || `[${media.kind === 'audio' ? 'Voice note' : 'Attachment'}]`,
     direction: message.key.fromMe ? 'outgoing' : 'incoming',
+    ...(message.key.fromMe && typeof quotedId === 'string' && quotedId.length <= 160 ? { quotedMessageId: quotedId } : {}),
     media,
     ...(media?.kind === 'audio' ? { durationSeconds: Number(content.audioMessage.seconds) || null } : {}),
     ...(sourceKind === 'group' && !message.key.fromMe ? addressing(content, selfIds, text, selfName) : {}),

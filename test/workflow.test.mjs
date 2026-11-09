@@ -102,7 +102,7 @@ test('workflow preferences, feedback, snoozing, reply completion and payment war
     }], { includeLocal: false });
     const contextAt = new Date().toISOString();
     store.recordContextMessage({ id: 'context-in', groupId: sourceId, groupName: 'Family', direction: 'incoming', sentAt: contextAt, text: 'Can you confirm?' });
-    const completed = store.markSourceReplied({ id: 'context-out', groupId: sourceId, groupName: 'Family', direction: 'outgoing', sentAt: contextAt, text: 'Yes.' });
+    const completed = store.markSourceReplied({ id: 'context-out', groupId: sourceId, groupName: 'Family', direction: 'outgoing', quotedMessageId: 'reply-needed', sentAt: contextAt, text: 'Yes.' });
     assert.equal(completed.find((item) => item.id === reply.items[0].id).status, 'done');
     assert.equal(store.recentContext({ groupId: sourceId }).length, 1);
 

@@ -1,6 +1,28 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { notificationPayload } from '../app/server/push.mjs';
+import { PushService } from '../app/server/push.mjs';
+import { createRequire } from 'node:module';
+
+test('dismiss control pushes go only to workers that advertised support', async (t) => {
+  const webpush = createRequire(new URL('../app/server/push.mjs', import.meta.url))('web-push');
+  const delivered = [];
+  t.mock.method(webpush, 'sendNotification', async (subscription, payload) => { delivered.push([subscription.endpoint, JSON.parse(payload)]); });
+  const service = new PushService({}, { subscriptions: () => [
+    { endpoint: 'https://push.invalid/old', subscription: { endpoint: 'https://push.invalid/old' } },
+    { endpoint: 'https://push.invalid/current', subscription: { endpoint: 'https://push.invalid/current', threadmarkDismissal: true } },
+  ] });
+  service.enabled = true;
+  await service.dismissItems({ type: 'dismiss', profileId: 'personal', itemIds: ['synthetic-item'] });
+  assert.equal(delivered.length, 1);
+  assert.equal(delivered[0][0], 'https://push.invalid/current');
+  assert.deepEqual(delivered[0][1].itemIds, ['synthetic-item']);
+  delivered.length = 0;
+  const ids = Array.from({ length: 120 }, (_, i) => `synthetic-${i}-${'x'.repeat(100)}`);
+  await service.dismissItems({ type: 'dismiss', profileId: 'personal', itemIds: ids });
+  assert.deepEqual(delivered.flatMap(([, payload]) => payload.itemIds), ids);
+  assert.ok(delivered.every(([, payload]) => Buffer.byteLength(JSON.stringify(payload)) <= 3500), 'large reply batches fit Web Push payload limits');
+});
 
 test('push notifications use the Threadmark app icon', () => {
   const payload = notificationPayload({

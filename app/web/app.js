@@ -426,6 +426,12 @@ function connectStream() {
   state.stream?.close();
   const stream = new EventSource('/api/stream');
   state.stream = stream;
+  stream.addEventListener('notification-dismiss', async (event) => {
+    try {
+      const registration = await navigator.serviceWorker?.ready;
+      registration?.active?.postMessage(JSON.parse(event.data));
+    } catch {}
+  });
   stream.addEventListener('item', async (event) => {
     const item = JSON.parse(event.data);
     if (!item.profile || item.profile.id === state.profileId) await refreshFeedAndSummary();
@@ -1043,7 +1049,7 @@ async function enableAlerts() {
     const registration = await navigator.serviceWorker.ready;
     const subscription = await registration.pushManager.getSubscription()
       || await registration.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: base64Key(key.publicKey) });
-    await api('/api/push/subscription', { method: 'POST', body: JSON.stringify(subscription) });
+    await api('/api/push/subscription', { method: 'POST', body: await pushSubscriptionBody(registration, subscription) });
     setAlertButton('enabled');
     showToast('Private alerts are enabled on this device');
   } catch (error) { showToast(error.message); }
@@ -1070,11 +1076,23 @@ async function refreshAlertStatus() {
       setAlertButton('disabled');
       return;
     }
-    await api('/api/push/subscription', { method: 'POST', body: JSON.stringify(subscription) });
+    await api('/api/push/subscription', { method: 'POST', body: await pushSubscriptionBody(registration, subscription) });
     setAlertButton('enabled');
   } catch {
     setAlertButton('disabled');
   }
+}
+
+async function pushSubscriptionBody(registration, subscription) {
+  const supported = await new Promise((resolve) => {
+    if (!registration.active || !('MessageChannel' in window)) return resolve(false);
+    const channel = new MessageChannel();
+    const finish = (value) => { clearTimeout(timer); channel.port1.close(); resolve(value); };
+    const timer = setTimeout(() => finish(false), 1000);
+    channel.port1.onmessage = (event) => finish(event.data?.dismiss === true);
+    registration.active.postMessage({ type: 'notification-capabilities' }, [channel.port2]);
+  });
+  return JSON.stringify({ ...subscription.toJSON(), threadmarkDismissal: supported });
 }
 
 function setAlertButton(status) {

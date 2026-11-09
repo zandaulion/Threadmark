@@ -544,10 +544,12 @@ export class ThreadmarkStore {
 
   markSourceReplied(message) {
     const source = sourceFromMessage(message);
-    if (!source) return [];
+    if (!source || message.direction !== 'outgoing' || !Number.isFinite(new Date(message.sentAt).valueOf())) return [];
     const rows = this.db.prepare(`${itemSelect()} WHERE g.id=? AND a.status='open' ORDER BY a.created_at DESC`).all(source.id);
     const changed = [];
     for (const row of rows) {
+      if (new Date(row.sent_at) > new Date(message.sentAt)) continue;
+      if (message.quotedMessageId ? row.message_id !== message.quotedMessageId : source.kind !== 'contact') continue;
       const details = safeJson(row.details_json);
       if (!details.awaitingReply) continue;
       details.repliedAt = safeIso(message.sentAt);
@@ -556,6 +558,23 @@ export class ThreadmarkStore {
       changed.push(this.itemById(row.id));
     }
     return changed;
+  }
+
+  replyNotificationItems(message) {
+    const source = sourceFromMessage(message);
+    if (!source || message.direction !== 'outgoing' || !message.quotedMessageId || !Number.isFinite(new Date(message.sentAt).valueOf())) return [];
+    return this.db.prepare(`${itemSelect()} WHERE g.id=? AND m.id=? AND a.status='open' AND m.sent_at<=?`)
+      .all(source.id, String(message.quotedMessageId), safeIso(message.sentAt)).map(publicItem);
+  }
+
+  dismissNotifications(items, at = now()) {
+    const dismissedAt = new Date(Math.min(Date.now(), new Date(safeIso(at)).valueOf())).toISOString();
+    for (const item of items) {
+      const current = this.itemById(item.id);
+      if (current && (!current.details.notificationDismissedAt || current.details.notificationDismissedAt < dismissedAt)) this.db.prepare('UPDATE attention_items SET details_json=? WHERE id=?')
+        .run(JSON.stringify({ ...current.details, notificationDismissedAt: dismissedAt }), item.id);
+    }
+    return dismissedAt;
   }
 
   hasMessage(id) {
@@ -723,7 +742,7 @@ export class ThreadmarkStore {
 }
 
 function itemSelect() {
-  return `SELECT a.id, a.type, a.title, a.details_json, a.event_at, a.amount_minor,
+  return `SELECT a.id, a.message_id, a.type, a.title, a.details_json, a.event_at, a.amount_minor,
     a.currency, a.confidence, a.priority, a.notify, a.status, a.created_at, a.resolved_at,
     a.snoozed_until, a.last_notified_at, a.feedback, a.feedback_at,
     m.text, m.sender_name, m.sent_at, m.direction, m.media_json, m.external_url,

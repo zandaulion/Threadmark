@@ -88,7 +88,7 @@ test('Actions notification action opens the item action menu URL', async () => {
   assert.deepEqual(harness.opened, ['https://threadmark.test/#item=message%3Aitem&actions=1']);
 });
 
-test('a failed Done notification action opens the item instead', async () => {
+test('a failed Done notification action stays in the shade and restores an actionable notification', async () => {
   const harness = serviceWorkerHarness(async () => ({ ok: false }));
   let completion;
   harness.listeners.notificationclick({
@@ -97,7 +97,9 @@ test('a failed Done notification action opens the item instead', async () => {
     waitUntil: (promise) => { completion = promise; },
   });
   await completion;
-  assert.deepEqual(harness.opened, ['https://threadmark.test/#item=message%3Aitem']);
+  assert.deepEqual(harness.opened, []);
+  assert.equal(harness.notifications[0].options.silent, true);
+  assert.equal(harness.notifications[0].options.actions[0].action, 'done');
 });
 
 function trayHarness() {
@@ -114,7 +116,7 @@ function trayHarness() {
     harness.listeners.push({ data: { json: () => payload }, waitUntil: (promise) => { completion = promise; } });
     return completion;
   };
-  return { tray, push };
+  return { ...harness, tray, push };
 }
 
 const alert = (id, category, extra = {}) => ({
@@ -164,4 +166,68 @@ test('alerts arriving at the same moment are both counted', async () => {
   await Promise.all([push(alert('a', 'payment')), push(alert('b', 'payment')), push(alert('c', 'reminder'))]);
   assert.equal(tray.length, 1);
   assert.equal(tray[0].title, '3 alerts · 2 payments, 1 action');
+});
+
+test('reply dismissal removes one grouped alert quietly and never recreates a missing notification', async () => {
+  const { tray, push } = trayHarness();
+  await push(alert('a', 'payment'));
+  await push(alert('b', 'reminder'));
+  await push(alert('dev', 'meeting', { profileId: 'dev', profileName: 'Dev', profileUrl: '/?profile=dev' }));
+  await push({ type: 'dismiss', profileId: 'personal', itemIds: ['b'] });
+  assert.equal(tray.length, 2);
+  assert.deepEqual(Array.from(tray[0].data.alerts, (a) => a.itemId), ['a']);
+  assert.equal(tray[0].data.itemId, 'a');
+  assert.equal(tray[0].actions[0].action, 'done');
+  assert.equal(tray[0].silent, true);
+  assert.equal(tray[0].renotify, false);
+  await push({ type: 'dismiss', profileId: 'personal', itemIds: ['a'] });
+  assert.equal(tray.length, 1);
+  await push({ type: 'dismiss', profileId: 'personal', itemIds: ['missing'] });
+  assert.equal(tray.length, 1, 'the Dev notification and dismissed notifications stay untouched');
+});
+
+test('foreground messages dismiss alerts and Done does not close other profiles or open a window', async () => {
+  const { tray, push, listeners, opened } = trayHarness();
+  await push(alert('a', 'payment'));
+  await push(alert('dev', 'meeting', { profileId: 'dev', profileName: 'Dev', profileUrl: '/?profile=dev' }));
+  let completion;
+  listeners.notificationclick({ action: 'done', notification: tray[0], waitUntil: (p) => { completion = p; } });
+  await completion;
+  assert.equal(tray.length, 1);
+  assert.equal(tray[0].data.itemId, 'dev');
+  assert.deepEqual(opened, []);
+  listeners.message({ data: { type: 'dismiss', profileId: 'dev', itemIds: ['dev'] }, waitUntil: (p) => { completion = p; } });
+  await completion;
+  assert.equal(tray.length, 0);
+});
+
+test('late alert pushes are checked against persisted dismissal state', async () => {
+  const harness = serviceWorkerHarness(async () => ({ ok: true, json: async () => ({ dismissedIds: ['answered'] }) }));
+  let completion;
+  harness.context.self.registration.getNotifications = async () => [];
+  harness.listeners.push({ data: { json: () => alert('answered', 'reminder') }, waitUntil: (p) => { completion = p; } });
+  await completion;
+  assert.equal(harness.notifications.length, 0);
+});
+
+test('worker advertises dismissal support before the server sends control pushes', () => {
+  const { listeners } = serviceWorkerHarness();
+  let result;
+  listeners.message({ data: { type: 'notification-capabilities' }, ports: [{ postMessage: (value) => { result = value; } }] });
+  assert.equal(result.dismiss, true);
+});
+
+test('Done on an older single notification preserves alerts added to its group meanwhile', async () => {
+  const { tray, push, listeners } = trayHarness();
+  await push(alert('a', 'payment'));
+  const clicked = tray[0];
+  // Model a native close by tag: closing an old handle could remove a newer summary.
+  clicked.close = () => { const index = tray.findIndex((n) => n.tag === clicked.tag); if (index >= 0) tray.splice(index, 1); };
+  await push(alert('b', 'reminder'));
+  let completion;
+  listeners.notificationclick({ action: 'done', notification: clicked, waitUntil: (p) => { completion = p; } });
+  await completion;
+  assert.equal(tray.length, 1);
+  assert.equal(tray[0].data.itemId, 'b');
+  assert.equal(tray[0].silent, true);
 });

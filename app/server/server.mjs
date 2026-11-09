@@ -58,6 +58,19 @@ export function createThreadmarkServer(options = {}) {
     for (const response of streams) response.write(frame);
   };
 
+  const dismissItemNotifications = (items, at) => {
+    const unique = [...new Map(items.map((item) => [item.id, item])).values()];
+    if (!unique.length) return;
+    const dismissedAt = store.dismissNotifications(unique, at);
+    const profiles = new Set(unique.map((item) => item.profile?.id || 'personal'));
+    for (const profileId of profiles) {
+      const payload = { type: 'dismiss', profileId, dismissedAt,
+        itemIds: unique.filter((item) => (item.profile?.id || 'personal') === profileId).map((item) => item.id) };
+      broadcast('notification-dismiss', payload);
+      void push.dismissItems?.(payload).catch(() => {});
+    }
+  };
+
   const splitInternal = Boolean(config.internalPort);
   const handler = (scope) => async (req, res) => {
     const url = new URL(req.url, 'http://local.invalid');
@@ -143,7 +156,7 @@ export function createThreadmarkServer(options = {}) {
           if (!selection.source || !selection.selected) return json(res, 200, store.ingestMessage(body));
           const settings = store.settings();
           const voice = body.origin === 'voice_transcript' ? voices.get(body.id) : null;
-          if ((body.media?.kind === 'audio' || body.origin === 'voice_transcript') && (body.origin !== 'voice_transcript'
+          if (((body.media?.kind === 'audio' && body.direction !== 'outgoing') || body.origin === 'voice_transcript') && (body.origin !== 'voice_transcript'
             || !settings.voiceTranscription || !settings.voiceActionDetection
             || voice?.status !== 'ready' || voice.source.id !== body.sourceId || voice.attempt !== body.voiceAttempt
             || String(body.text || '') !== voice.transcript.slice(0, 12_000))) {
@@ -152,7 +165,9 @@ export function createThreadmarkServer(options = {}) {
           if (body.direction === 'outgoing') {
             if (!settings.outgoingMonitoring) return json(res, 200, { accepted: false, reason: 'outgoing_disabled', sourceKind: selection.source.kind });
             store.recordContextMessage(body);
+            const answered = store.replyNotificationItems(body);
             const updates = store.markSourceReplied(body);
+            dismissItemNotifications([...answered, ...updates], body.sentAt);
             for (const item of updates) broadcast('item', item);
             return json(res, 200, { accepted: true, outgoing: true, items: [], updatedItems: updates });
           }
@@ -265,6 +280,19 @@ export function createThreadmarkServer(options = {}) {
         const profileId = profileIdFrom(url.searchParams.get('profile'));
         if (pathname === '/api/profiles' && req.method === 'GET') return json(res, 200, { profiles: store.listProfiles() });
         if (pathname === '/api/summary' && req.method === 'GET') return json(res, 200, store.summary(profileId));
+        if (pathname === '/api/notifications/state' && req.method === 'POST') {
+          const body = await readJson(req);
+          if (!Array.isArray(body.alerts) || body.alerts.length > 50 || body.alerts.some((alert) => !alert
+            || typeof alert.itemId !== 'string' || alert.itemId.length > 512)) return json(res, 400, { error: 'invalid_alerts' });
+          const dismissedIds = body.alerts.filter((alert) => {
+            const item = store.itemById(String(alert?.itemId || ''));
+            const stamp = new Date(alert?.issuedAt || 0).valueOf();
+            const issuedAt = Number.isFinite(stamp) ? stamp : 0;
+            return !item || item.status !== 'open' || Boolean(item.snoozedUntil && new Date(item.snoozedUntil).valueOf() > Date.now())
+              || (item.details.notificationDismissedAt && new Date(item.details.notificationDismissedAt).valueOf() >= issuedAt);
+          }).map((alert) => alert.itemId);
+          return json(res, 200, { dismissedIds });
+        }
         if (pathname === '/api/settings' && req.method === 'GET') return json(res, 200, store.settings());
         if (pathname === '/api/settings' && req.method === 'PUT') {
           const settings = store.updateSettings(await readJson(req));
@@ -390,6 +418,7 @@ export function createThreadmarkServer(options = {}) {
         if (itemStatus && req.method === 'POST') {
           const body = await readJson(req);
           const item = store.setItemStatus(decodeURIComponent(itemStatus[1]), body.status);
+          if (item?.status === 'done') dismissItemNotifications([item]);
           if (item) broadcast('item', item);
           return json(res, item ? 200 : 404, item || { error: 'not_found' });
         }
@@ -402,6 +431,7 @@ export function createThreadmarkServer(options = {}) {
         const itemSnooze = pathname.match(/^\/api\/items\/(.+)\/snooze$/u);
         if (itemSnooze && req.method === 'POST') {
           const item = store.snoozeItem(decodeURIComponent(itemSnooze[1]), (await readJson(req)).until);
+          if (item) dismissItemNotifications([item]);
           if (item) broadcast('item', item);
           return json(res, item ? 200 : 400, item || { error: 'invalid_snooze' });
         }
