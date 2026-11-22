@@ -1,8 +1,10 @@
-import webpush from 'web-push';
+import * as webpush from 'web-push';
 
 export class PushService {
-  constructor(config, store) {
+  // web-push 4 is ESM-only, and a module namespace cannot be mocked; tests pass their own sender.
+  constructor(config, store, sender = webpush) {
     this.store = store;
+    this.sender = sender;
     this.enabled = Boolean(config.vapidPublicKey && config.vapidPrivateKey);
     this.publicKey = config.vapidPublicKey;
     if (this.enabled) webpush.setVapidDetails(config.vapidSubject, config.vapidPublicKey, config.vapidPrivateKey);
@@ -13,7 +15,7 @@ export class PushService {
     const payload = JSON.stringify(notificationPayload(item));
     await Promise.allSettled(this.store.subscriptions().map(async ({ endpoint, subscription }) => {
       try {
-        await webpush.sendNotification(subscription, payload, { TTL: 3600, urgency: 'normal' });
+        await this.sender.sendNotification(subscription, payload, { TTL: 3600, urgency: 'normal' });
       } catch (error) {
         if (error?.statusCode === 404 || error?.statusCode === 410) this.store.removeSubscription(endpoint);
         else console.error(`Push delivery failed: ${error?.message || error}`);
@@ -36,7 +38,7 @@ export class PushService {
     // Older workers would render this control message as a new generic alert.
     await Promise.allSettled(this.store.subscriptions().filter(({ subscription }) => subscription.threadmarkDismissal === true).map(async ({ endpoint, subscription }) => {
       try {
-        for (const batch of batches) await webpush.sendNotification(subscription, batch, { TTL: 3600, urgency: 'normal' });
+        for (const batch of batches) await this.sender.sendNotification(subscription, batch, { TTL: 3600, urgency: 'normal' });
       } catch (error) {
         if (error?.statusCode === 404 || error?.statusCode === 410) this.store.removeSubscription(endpoint);
       }
@@ -51,7 +53,7 @@ export class PushService {
       url: `/?profile=${encodeURIComponent(profile.id)}`, tag: `threadmark-digest-${profile.id}-${new Date().toISOString().slice(0, 10)}`, icon: '/icons/icon-192.png', badge: '/icons/icon-192.png',
     });
     await Promise.allSettled(this.store.subscriptions().map(async ({ endpoint, subscription }) => {
-      try { await webpush.sendNotification(subscription, payload, { TTL: 21_600, urgency: 'low' }); }
+      try { await this.sender.sendNotification(subscription, payload, { TTL: 21_600, urgency: 'low' }); }
       catch (error) {
         if (error?.statusCode === 404 || error?.statusCode === 410) this.store.removeSubscription(endpoint);
       }

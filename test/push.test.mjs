@@ -2,16 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { notificationPayload } from '../app/server/push.mjs';
 import { PushService } from '../app/server/push.mjs';
-import { createRequire } from 'node:module';
 
-test('dismiss control pushes go only to workers that advertised support', async (t) => {
-  const webpush = createRequire(new URL('../app/server/push.mjs', import.meta.url))('web-push');
+test('dismiss control pushes go only to workers that advertised support', async () => {
   const delivered = [];
-  t.mock.method(webpush, 'sendNotification', async (subscription, payload) => { delivered.push([subscription.endpoint, JSON.parse(payload)]); });
+  const sender = { sendNotification: async (subscription, payload) => { delivered.push([subscription.endpoint, JSON.parse(payload)]); } };
   const service = new PushService({}, { subscriptions: () => [
     { endpoint: 'https://push.invalid/old', subscription: { endpoint: 'https://push.invalid/old' } },
     { endpoint: 'https://push.invalid/current', subscription: { endpoint: 'https://push.invalid/current', threadmarkDismissal: true } },
-  ] });
+  ] }, sender);
   service.enabled = true;
   await service.dismissItems({ type: 'dismiss', profileId: 'personal', itemIds: ['synthetic-item'] });
   assert.equal(delivered.length, 1);
