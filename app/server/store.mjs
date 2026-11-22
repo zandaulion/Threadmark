@@ -5,6 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { detectAttention } from './detectors.mjs';
 import { evaluateRules, normaliseRule } from './rules.mjs';
 import { extractDueAt } from './dates.mjs';
+import { gmailSenderVisibilitySql, isGitHubAddress, isIgnoredGmailMessage, knownGitHubSenderIds } from '../../shared/gmail-filters.mjs';
 import { ensureVoiceSchema } from './voice.mjs';
 
 const now = () => new Date().toISOString();
@@ -321,6 +322,7 @@ export class ThreadmarkStore {
 
   settings() {
     const defaults = {
+      ignoreGitHubEmails: false,
       contextAware: false,
       outgoingMonitoring: false,
       attachmentProcessing: false,
@@ -340,6 +342,7 @@ export class ThreadmarkStore {
     const current = this.settings();
     const digestTime = /^([01]\d|2[0-3]):[0-5]\d$/u.test(String(input.digestTime || '')) ? String(input.digestTime) : current.digestTime;
     const next = {
+      ignoreGitHubEmails: input.ignoreGitHubEmails === undefined ? current.ignoreGitHubEmails : Boolean(input.ignoreGitHubEmails),
       contextAware: Boolean(input.contextAware),
       outgoingMonitoring: Boolean(input.outgoingMonitoring),
       attachmentProcessing: Boolean(input.attachmentProcessing),
@@ -361,6 +364,7 @@ export class ThreadmarkStore {
     const settings = this.settings();
     return {
       profileId: profile,
+      ignoreGitHubEmails: settings.ignoreGitHubEmails,
       sourceIds: profile === DEFAULT_PROFILE_ID
         ? this.db.prepare("SELECT id FROM groups WHERE profile_id='personal' AND selected=1 AND kind IN ('group','contact')").all().map((row) => row.id)
         : [],
@@ -398,6 +402,7 @@ export class ThreadmarkStore {
     if (!message || typeof message.id !== 'string' || !source) {
       return { accepted: false, reason: 'invalid' };
     }
+    if (this.isIgnoredMessage(message)) return { accepted: false, reason: 'ignored_sender', sourceKind: source.kind };
     const profileId = profileFromMessage(message);
     const knownSource = this.db.prepare('SELECT selected FROM groups WHERE id=? AND kind=? AND profile_id=?').get(source.id, source.kind, profileId);
     if (!knownSource) {
@@ -581,8 +586,25 @@ export class ThreadmarkStore {
     return typeof id === 'string' && Boolean(this.db.prepare('SELECT 1 FROM messages WHERE id=?').get(id));
   }
 
+  isIgnoredMessage(message) {
+    const settings = this.settings();
+    if (!settings.ignoreGitHubEmails) return false;
+    return isIgnoredGmailMessage(message, settings, this.gitHubSenderIds());
+  }
+
+  gitHubSenderIds() {
+    const sources = this.db.prepare("SELECT id, name FROM groups WHERE kind='gmail_sender'").all();
+    const ids = sources.filter((source) => isGitHubAddress(source.name.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/iu)?.[0])).map(source => source.id);
+    return [...new Set([...knownGitHubSenderIds(), ...ids])];
+  }
+
+  visibleGmailSenderSql() {
+    const settings = this.settings();
+    return gmailSenderVisibilitySql(settings, settings.ignoreGitHubEmails ? this.gitHubSenderIds() : []);
+  }
+
   listItems({ status = 'open', type = 'all', limit = 100, profileId = DEFAULT_PROFILE_ID } = {}) {
-    const clauses = ['g.profile_id=?'];
+    const clauses = ['g.profile_id=?', this.visibleGmailSenderSql()];
     const values = [validProfileId(profileId)];
     const promotional = "COALESCE(json_extract(a.details_json, '$.attentionTriage.disposition'), '')='promotional'";
     if (status === 'open') clauses.push(`a.status='open' AND NOT (${promotional}) AND (a.snoozed_until IS NULL OR datetime(a.snoozed_until)<=datetime('now'))`);
@@ -643,6 +665,7 @@ export class ThreadmarkStore {
 
   dueNotifications() {
     return this.db.prepare(`${itemSelect()} WHERE a.status='open'
+      AND ${this.visibleGmailSenderSql()}
       AND COALESCE(json_extract(a.details_json, '$.attentionTriage.disposition'), '')!='promotional' AND (
       (a.snoozed_until IS NOT NULL AND datetime(a.snoozed_until)<=datetime('now') AND a.last_notified_at IS NULL)
       OR (a.event_at IS NOT NULL AND a.event_at<=datetime('now', '+1 hour') AND a.event_at>datetime('now', '-12 hours')
@@ -676,9 +699,10 @@ export class ThreadmarkStore {
 
   summary(profileId = DEFAULT_PROFILE_ID) {
     const profile = validProfileId(profileId);
+    const visibleSender = this.visibleGmailSenderSql();
     const rows = this.db.prepare(`SELECT a.type, COUNT(*) AS count FROM attention_items a
       JOIN messages m ON m.id=a.message_id JOIN groups g ON g.id=m.group_id
-      WHERE g.profile_id=? AND a.status='open' AND COALESCE(json_extract(a.details_json, '$.attentionTriage.disposition'), '')!='promotional'
+      WHERE g.profile_id=? AND ${visibleSender} AND a.status='open' AND COALESCE(json_extract(a.details_json, '$.attentionTriage.disposition'), '')!='promotional'
       AND (a.snoozed_until IS NULL OR datetime(a.snoozed_until)<=datetime('now')) GROUP BY a.type`).all(profile);
     const summary = { open: 0, payments: 0, meetings: 0, reminders: 0, snoozed: 0, promotional: 0, groups: 0, contacts: 0, gmail: 0 };
     for (const row of rows) {
@@ -691,10 +715,10 @@ export class ThreadmarkStore {
     summary.contacts = Number(this.db.prepare("SELECT COUNT(*) AS count FROM groups WHERE profile_id=? AND selected=1 AND kind='contact'").get(profile).count);
     summary.gmail = Number(this.db.prepare("SELECT COUNT(*) AS count FROM groups WHERE profile_id=? AND selected=1 AND kind IN ('gmail_label','gmail_sender')").get(profile).count);
     summary.snoozed = Number(this.db.prepare(`SELECT COUNT(*) AS count FROM attention_items a JOIN messages m ON m.id=a.message_id JOIN groups g ON g.id=m.group_id
-      WHERE g.profile_id=? AND a.status='open' AND COALESCE(json_extract(a.details_json, '$.attentionTriage.disposition'), '')!='promotional'
+      WHERE g.profile_id=? AND ${visibleSender} AND a.status='open' AND COALESCE(json_extract(a.details_json, '$.attentionTriage.disposition'), '')!='promotional'
       AND datetime(a.snoozed_until)>datetime('now')`).get(profile).count);
     summary.promotional = Number(this.db.prepare(`SELECT COUNT(*) AS count FROM attention_items a JOIN messages m ON m.id=a.message_id JOIN groups g ON g.id=m.group_id
-      WHERE g.profile_id=? AND a.status='open' AND json_extract(a.details_json, '$.attentionTriage.disposition')='promotional'`).get(profile).count);
+      WHERE g.profile_id=? AND ${visibleSender} AND a.status='open' AND json_extract(a.details_json, '$.attentionTriage.disposition')='promotional'`).get(profile).count);
     return summary;
   }
 

@@ -7,6 +7,7 @@ WORKDIR /srv/app
 COPY app/package.json app/package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts
 COPY app/server ./server
+COPY shared /srv/shared
 COPY app/web ./web
 VOLUME ["/data"]
 ENV DATA_DIR=/data HOST=0.0.0.0 PORT=4391 INTERNAL_PORT=4390

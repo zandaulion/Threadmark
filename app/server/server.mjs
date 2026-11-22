@@ -152,6 +152,7 @@ export function createThreadmarkServer(options = {}) {
         }
         if (pathname === '/internal/events' && req.method === 'POST') {
           const body = await readJson(req, 128_000);
+          if (store.isIgnoredMessage(body)) return json(res, 200, { accepted: false, reason: 'ignored_sender' });
           const selection = store.isSelectedMessage(body);
           if (!selection.source || !selection.selected) return json(res, 200, store.ingestMessage(body));
           const settings = store.settings();

@@ -295,6 +295,7 @@ function handleItemDeepLink() {
 }
 
 function renderSettings() {
+  $('#setting-ignore-github').checked = Boolean(state.settings.ignoreGitHubEmails);
   $('#setting-context').checked = Boolean(state.settings.contextAware);
   $('#setting-outgoing').checked = Boolean(state.settings.outgoingMonitoring);
   $('#setting-attachments').checked = Boolean(state.settings.attachmentProcessing);
@@ -457,7 +458,7 @@ function connectStream() {
     renderRules();
   });
   stream.addEventListener('bridge', (event) => { state.bridge = JSON.parse(event.data); renderBridge(); });
-  stream.addEventListener('settings', (event) => { state.settings = JSON.parse(event.data); renderSettings(); renderDetection(); if (state.view === 'voice') renderFeed(); });
+  stream.addEventListener('settings', (event) => { state.settings = JSON.parse(event.data); renderSettings(); renderDetection(); void refreshFeedAndSummary(); });
   stream.onerror = () => {
     if (state.stream !== stream || state.streamRetryTimer) return;
     state.streamRetryTimer = setTimeout(() => {
@@ -814,6 +815,7 @@ $('#settings-form').addEventListener('submit', async (event) => {
       method: 'PUT',
       body: JSON.stringify({
         contextAware: $('#setting-context').checked,
+        ignoreGitHubEmails: $('#setting-ignore-github').checked,
         outgoingMonitoring: $('#setting-outgoing').checked,
         attachmentProcessing: $('#setting-attachments').checked,
         voiceTranscription: $('#setting-voice').checked,
@@ -825,6 +827,7 @@ $('#settings-form').addEventListener('submit', async (event) => {
       }),
     });
     $('#settings-dialog').close();
+    await refreshFeedAndSummary();
     renderDetection();
     showToast('Preferences saved. Bridge changes apply within 15 seconds.');
   } catch (error) { $('#settings-error').textContent = error.message; }

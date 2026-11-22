@@ -27,6 +27,8 @@ The two Gmail authorizations are isolated: connecting Dev does not replace Perso
 
 ## Choose monitored sources
 
+In **Settings**, enable **Ignore GitHub emails** to exclude email from `github.com` and its subdomains in both Gmail profiles, including Dependabot, review requests, repository activity and security notifications. New GitHub emails are skipped before their bodies are fetched or sent to Jev. Existing alerts from recognized GitHub senders disappear from all status views and counters. Messages from other senders that merely mention GitHub remain eligible for detection. Turn the preference off to show previously stored GitHub alerts again; skipped messages are not backfilled. This does not modify Gmail.
+
 Every source is off by default, including Gmail **INBOX**. Selecting one affects only messages received afterward; Threadmark does not scan older WhatsApp or Gmail history. Connecting or reconnecting Gmail establishes a current history checkpoint, so mail received before that checkpoint is not imported later.
 
 In **Chats** for the selected profile:

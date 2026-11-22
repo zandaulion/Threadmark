@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { isGitHubAddress } from '../shared/gmail-filters.mjs';
 
 export function senderSourceId(address, profileId = 'personal') {
   const normalized = String(address || '').trim().toLocaleLowerCase();
@@ -32,6 +33,7 @@ export function normalizeGmailMessage(message, source, options = {}) {
     sourceKind: source.kind,
     senderId: senderSourceId(sender.address, options.profileId) || `${gmailPrefix(options.profileId)}sender:unknown`,
     senderName: sender.name,
+    senderHints: { github: isGitHubAddress(sender.address) },
     sentAt: Number.isFinite(internalDate) ? new Date(internalDate).toISOString() : new Date().toISOString(),
     text,
     direction: 'incoming',

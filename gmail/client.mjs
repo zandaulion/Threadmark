@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { gmailSourceId, normalizeGmailMessage, messageMetadata } from './normalize.mjs';
+import { isIgnoredGmailSender } from '../shared/gmail-filters.mjs';
 
 const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
 const API_ROOT = 'https://gmail.googleapis.com/gmail/v1/users/me';
@@ -12,6 +13,7 @@ export class GmailConnector {
     this.fetch = options.fetch || globalThis.fetch;
     this.credentials = secretStore.load();
     this.routing = new Map();
+    this.ignoreGitHubEmails = false;
     this.delivering = false;
     this.syncing = false;
     this.lastEventAt = null;
@@ -130,6 +132,7 @@ export class GmailConnector {
       });
       if (!response.ok) return;
       const payload = await response.json();
+      this.ignoreGitHubEmails = payload.ignoreGitHubEmails === true;
       this.routing = new Map((Array.isArray(payload.gmailSources) ? payload.gmailSources : []).map((source) => [source.id, source]));
     } catch {}
   }
@@ -194,6 +197,7 @@ export class GmailConnector {
     const metadataMessage = await this.api(`/messages/${encodeURIComponent(messageId)}?format=metadata&metadataHeaders=From&metadataHeaders=Subject`);
     const metadata = messageMetadata(metadataMessage, this.config.profileId);
     if (!metadata.senderSourceId || metadata.labelIds.includes('SENT') || metadata.labelIds.includes('DRAFT')) return;
+    if (isIgnoredGmailSender(metadata.sender.address, this)) return;
     this.outbox.put(`${this.config.profileId}:gmail-sender:${metadata.senderSourceId}`, '/internal/gmail/sources', {
       profileId: this.config.profileId,
       sources: [{

@@ -182,6 +182,10 @@
       </div>
       <p class="modal-copy">Local features are enabled independently. Options that expand what Jev sees are off until you choose them.</p>
       <section class="settings-section">
+        <h3>Email filters</h3>
+        <label class="rule-option"><input id="setting-ignore-github" type="checkbox" aria-labelledby="ignore-github-label" aria-describedby="ignore-github-description"><span><strong id="ignore-github-label">Ignore GitHub emails</strong><small id="ignore-github-description">Skip all email from GitHub in Personal and Dev, including Dependabot, reviews and security notifications. Existing GitHub alerts are hidden.</small></span></label>
+      </section>
+      <section class="settings-section">
         <h3>Reminders</h3>
         <label class="rule-option"><input id="setting-digest" type="checkbox"><span><strong>Daily digest</strong><small>One notification summarizing unresolved items.</small></span></label>
         <div class="settings-grid"><div><label for="setting-digest-time">Digest time</label><input id="setting-digest-time" type="time" value="19:00"></div><div><label for="setting-reply-delay">Reply reminder after</label><select id="setting-reply-delay"><option value="2">2 hours</option><option value="4">4 hours</option><option value="8">8 hours</option><option value="24">1 day</option><option value="48">2 days</option></select></div></div>

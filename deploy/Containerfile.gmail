@@ -4,6 +4,7 @@ WORKDIR /srv/gmail
 COPY gmail/package.json gmail/package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts
 COPY gmail/*.mjs ./
+COPY shared /srv/shared
 VOLUME ["/data"]
 ENV DATA_DIR=/data HOST=0.0.0.0 PORT=4393 APP_INTERNAL_URL=http://threadmark-app:4390
 EXPOSE 4393
